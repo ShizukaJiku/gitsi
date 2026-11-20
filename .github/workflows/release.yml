@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: The tag matches the code's version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $m = Select-String -Path internal/version/version.go -Pattern 'Version = "([^"]+)"' | Select-Object -First 1
+          $code = $m.Matches[0].Groups[1].Value
+          if ($tag -ne $code) { throw "tag v$tag does not match internal/version/version.go ($code)" }
+      - name: Vet and test
+        shell: pwsh
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw "go vet failed" }
+          go test -count=1 ./...
+          if ($LASTEXITCODE -ne 0) { throw "the tests failed" }
+      - name: Package
+        shell: pwsh
+        run: ./scripts/build.ps1 -Dist -SkipTests
+      - name: Publish the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP "notes.md"
+          $tag = "${{ github.ref_name }}"
+          $v = $tag.TrimStart("v")
+          # the release notes are this version's section of CHANGELOG.md
+          $lines = Get-Content CHANGELOG.md
+          $start = ($lines | Select-String -Pattern "^## \[$([regex]::Escape($v))\]" | Select-Object -First 1).LineNumber
+          if (-not $start) { throw "CHANGELOG.md has no section for $v" }
+          $rest = $lines[$start..($lines.Count - 1)]
+          $end = ($rest | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
+          if ($end) { $rest = $rest[0..($end - 2)] }
+          Set-Content -Path $notes -Value $rest -Encoding utf8
+          gh release create $tag (Get-ChildItem dist -File).FullName --title "gitsi $v" --notes-file $notes --verify-tag

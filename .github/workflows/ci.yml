@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (vet, test, build)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        shell: pwsh
+        run: |
+          $files = gofmt -l .
+          if ($files) { Write-Output $files; throw "gofmt: these files are not formatted" }
+      - name: No third-party dependencies
+        shell: pwsh
+        run: |
+          if (Select-String -Path go.mod -Pattern '^\s*require' -Quiet) { throw "go.mod must not require third-party modules" }
+      - name: Vet, test and build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+  linux-race:
+    name: Linux (race detector)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go test -race
+        run: go test -race -count=1 ./...
