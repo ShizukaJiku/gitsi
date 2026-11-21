@@ -11,8 +11,22 @@ func TestName(t *testing.T) {
 			t.Errorf("%q must be valid: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "a b", "x';calc", "..", ".", "a/b", "a$b", "a\"b"} {
+	// a leading dash would turn the ssh target ("-oX@host") into an option
+	for _, bad := range []string{"", "a b", "x';calc", "..", ".", "a/b", "a$b", "a\"b", "-x", "-oProxyCommand", "--"} {
 		if Name("n", bad) == nil {
+			t.Errorf("%q must be invalid", bad)
+		}
+	}
+}
+
+func TestHost(t *testing.T) {
+	for _, ok := range []string{"192.168.1.7", "hub-pc", "hub.lan", "fe80::1", "::1", "my_host"} {
+		if err := Host(ok); err != nil {
+			t.Errorf("%q must be valid: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "-oProxyCommand", "-x", "a b", "a;b", "a'b", "a=b", strings.Repeat("h", 254)} {
+		if Host(bad) == nil {
 			t.Errorf("%q must be invalid", bad)
 		}
 	}

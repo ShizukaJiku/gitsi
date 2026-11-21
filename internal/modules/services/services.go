@@ -126,8 +126,7 @@ func Forwards(svcs []config.Service) []transport.Forward {
 }
 
 func parseFlags(name string, env *module.Env, args []string, setup func(*flag.FlagSet)) ([]string, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet(name, env.Stderr)
 	setup(fs)
 	return module.ParseInterleaved(fs, args)
 }
@@ -266,8 +265,7 @@ func portFree(port int) bool {
 }
 
 func upCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("svc up", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("svc up", env.Stderr)
 	docker := fs.Bool("docker", false, "one tunnel per port the hub's containers publish, on the same local port (no catalog)")
 	wanted, err := module.ParseInterleaved(fs, args)
 	if err != nil {

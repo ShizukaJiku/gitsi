@@ -46,8 +46,9 @@ consumes. A single Go binary. Before changing something, read what applies:
 - **Commands**: `module.Command{Group, Name, Summary, Roles, Feature, NeedsHub, Run, Flags, Complete}`. `Flags` lists the options
   for completion (a test compares them with the FlagSet); `Complete`, optional, proposes values (fast: it runs on every Tab).
   `Summary` is half a line (at most 75 characters; a test requires it); details go in the options (`gitsi <cmd> -h`). Options use
-  `flag.NewFlagSet(name, flag.ContinueOnError)`, `fs.SetOutput(env.Stderr)` and `module.ParseInterleaved` (options and arguments
-  in any order).
+  `module.NewFlagSet(name, env.Stderr)` (a test requires it: on a mistyped option it proposes the closest one instead of dumping
+  the usage) and `module.ParseInterleaved` (options and arguments in any order). Options are parsed before anything connects:
+  `-h` never needs the hub (a test runs every command's `-h` offline).
 - **Errors**: lowercase, they state the cause and what to do. Categorizable ones use `fault.New(kind, message, action)` (each
   category has its exit code); the rest `fmt.Errorf("...: %w", err)`. Never invent a cause.
 - **Output**: results to `env.Stdout`, diagnostics to `env.Stderr`; honor `env.Quiet` and `env.JSON` (`env.PrintJSON`); progress

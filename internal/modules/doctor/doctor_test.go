@@ -201,10 +201,40 @@ func TestHubChecks(t *testing.T) {
 	}
 }
 
-type streamTr struct {
-	fakeTr
-	works bool
+// A hand-edited config.json with an invalid hub value: the diagnosis says so and goes no further (no TCP, no ssh).
+func TestEdgeChecksRejectsAnInvalidHubConfig(t *testing.T) {
+	c := cfg()
+	c.Hub.User = "-oProxyCommand"
+	d := deps(nil, netstatSample)
+	dialed := false
+	d.Dial = func(string, time.Duration) error { dialed = true; return nil }
+	rs := EdgeChecks(context.Background(), c, fakeTr{}, d, Options{})
+	if levels(rs)["configuration"] != Fail || dialed {
+		t.Fatalf("dialed=%v %+v", dialed, rs)
+	}
 }
+
+// A layout the edges would reject (a path PowerShell commands cannot carry) is a failure on the hub, with the way out.
+func TestHubChecksFailsOnALayoutEdgesWouldReject(t *testing.T) {
+	d := deps(nil, netstatSample)
+	d.Output = func(context.Context, string, ...string) (string, error) { return "", nil }
+	if _, ok := levels(HubChecks(context.Background(), cfg(), d))["layout paths"]; ok {
+		t.Fatal("a valid layout must not be reported")
+	}
+	c := cfg()
+	c.Home = "C:/Users/O'Brien/gitsi" // as a hand-edited config would leave it
+	rs := HubChecks(context.Background(), c, d)
+	if levels(rs)["layout paths"] != Fail {
+		t.Fatalf("%+v", rs)
+	}
+	for _, r := range rs {
+		if r.Name == "layout paths" && !strings.Contains(r.Detail, "gitsi config set home") {
+			t.Fatalf("the failure must say what to do: %+v", r)
+		}
+	}
+}
+
+type streamTr struct{ fakeTr }
 
 func (s streamTr) Stream(_ context.Context, _ string) (transport.Stream, error) {
 	return nil, errors.New("no process")

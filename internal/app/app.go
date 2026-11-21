@@ -71,8 +71,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		reg.help(stdout, cfg.Role, configured)
 		return 0
 	}
-	if args[0] == "help" { // gitsi help <group>
-		args = []string{args[1], "help"}
+	if args[0] == "help" { // gitsi help <group> | <command...>  =  gitsi <...> -h: it shows help, it never runs the command
+		args = append(append([]string(nil), args[1:]...), "-h")
 	}
 	if args[0] == "__complete" { // called by PowerShell tab completion (gitsi setup completion)
 		quiet := outputMode{quiet: true}
@@ -89,11 +89,22 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		reg.groupHelp(stdout, res.group, cfg.Role, configured)
 		return 0
 	case unknownSub:
-		fmt.Fprintf(stderr, "there is no command %q\n\n", "gitsi "+res.display)
+		fmt.Fprintf(stderr, "there is no command %q\n", "gitsi "+res.display)
+		if s := module.DidYouMean("gitsi "+res.group+" ", module.Suggest(args[1], reg.subNames(res.group, cfg.Role))); s != "" {
+			fmt.Fprintf(stderr, "  %s   (gitsi %s lists its commands)\n", s, res.group)
+			return 2
+		}
+		fmt.Fprintln(stderr)
 		reg.groupHelp(stderr, res.group, cfg.Role, configured)
 		return 2
 	case unknownCmd:
-		fmt.Fprintf(stderr, "unknown command: %s\n\n", res.display)
+		fmt.Fprintf(stderr, "unknown command: %s\n", res.display)
+		// a likely typo gets a one-line answer; only without a close match is the whole help worth printing
+		if s := module.DidYouMean("gitsi ", module.Suggest(args[0], append(reg.topNames(cfg.Role), "help", "version"))); s != "" {
+			fmt.Fprintf(stderr, "  %s   (gitsi help lists the commands)\n", s)
+			return 2
+		}
+		fmt.Fprintln(stderr)
 		reg.help(stderr, cfg.Role, configured)
 		return 2
 	}
@@ -101,6 +112,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if !cmd.Roles.Has(cfg.Role) {
 		fmt.Fprintf(stderr, "%s: not available for this machine's %s role (%s)\n", res.display, cfg.Role, roleLine(cfg.Role, configured))
 		return 2
+	}
+
+	if isHelpRequest(res.rest) {
+		return commandHelp(cmd, res.display, cfg, stdin, stdout)
 	}
 
 	env := newEnv(cfg, stdin, stdout, stderr, mode)
@@ -123,7 +138,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 // decides it: the edge asks for it and caches it).
 func newEnv(cfg *config.Config, stdin io.Reader, stdout, stderr io.Writer, mode outputMode) *module.Env {
 	env := &module.Env{Stdin: stdin, Stdout: stdout, Stderr: stderr, Config: cfg, Verbose: mode.verbose, Quiet: mode.quiet, JSON: mode.json}
-	if cfg.Role == config.RoleEdge && cfg.Hub.Host != "" {
+	// a hand-edited config.json with an invalid value gets no transport: authorize explains it (and 'gitsi config set' fixes it)
+	if cfg.Role == config.RoleEdge && cfg.Hub.Host != "" && cfg.Hub.Validate() == nil {
 		ssh := &transport.SSHExec{Host: cfg.Hub.Host, User: cfg.Hub.User, Port: cfg.Hub.Port, KeyFile: cfg.Hub.KeyFile}
 		if env.Verbose {
 			ssh.Trace = func(line string) { fmt.Fprintln(stderr, "[ssh] "+line) }
@@ -143,6 +159,12 @@ func exitCode(name string, err error, stderr io.Writer) int {
 	if errors.As(err, &xe) {
 		return xe.Code
 	}
+	if isHelpError(err) {
+		return 0 // the FlagSet already printed the usage
+	}
+	if module.IsUsageError(err) {
+		return 2 // wrong usage (README); the FlagSet already explained it, with a suggestion
+	}
 	if fe, ok := fault.As(err); ok {
 		fmt.Fprintf(stderr, "%s: %s\n", name, fault.Format(fe))
 		return fe.Kind.ExitCode()
@@ -161,6 +183,11 @@ func authorize(cmd module.Command, env *module.Env) error {
 		}
 	}
 	if cmd.NeedsHub && env.Config.Role == config.RoleEdge && env.Transport == nil {
+		if h := env.Config.Hub; h.Host != "" {
+			if err := h.Validate(); err != nil {
+				return fault.New(fault.NotConfigured, "invalid hub configuration: "+err.Error(), "fix it with: gitsi config set <key> <value> (gitsi config shows the keys)")
+			}
+		}
 		return fault.New(fault.NotConfigured, "this machine has no hub configured", "gitsi setup edge -host <hub-ip> -user <user>")
 	}
 	return nil

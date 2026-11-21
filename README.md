@@ -44,8 +44,8 @@ Download `gitsi-<version>-windows-amd64.zip` (or `arm64`) from the [releases](ht
 check it against `SHA256SUMS.txt`, and put `gitsi.exe` in a folder on your PATH:
 
 ```powershell
-Get-FileHash .\gitsi-1.0.0-windows-amd64.zip -Algorithm SHA256     # compare with SHA256SUMS.txt
-Expand-Archive .\gitsi-1.0.0-windows-amd64.zip $env:LOCALAPPDATA\gitsi\bin
+Get-FileHash .\gitsi-1.1.0-windows-amd64.zip -Algorithm SHA256     # compare with SHA256SUMS.txt
+Expand-Archive .\gitsi-1.1.0-windows-amd64.zip $env:LOCALAPPDATA\gitsi\bin
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:LOCALAPPDATA\gitsi\bin", "User")
 gitsi version
 ```

@@ -703,11 +703,11 @@ func TestReceiveClipPutsFilesAndFoldersAsPaths(t *testing.T) {
 		t.Fatalf("it must end up verified in %s: %v", want, got.Files)
 	}
 
-	img := r.putOutbox(mailbox.File, "capture.png", "PNGdata")
+	img := r.putOutbox(mailbox.File, "capture.png", "\u0089PNGdata")
 	if err := r.m.take(context.Background(), r.edge, []string{"-clip", img.ID[:8]}); err != nil {
 		t.Fatal(err)
 	}
-	if g := rec.got[1]; len(g.Files) != 1 || string(g.PNG) != "PNGdata" {
+	if g := rec.got[1]; len(g.Files) != 1 || string(g.PNG) != "\u0089PNGdata" {
 		t.Fatalf("an image goes as an image and as a file: %+v", g)
 	}
 

@@ -3,7 +3,6 @@ package provision
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -247,8 +246,7 @@ func sshKeygen(ctx context.Context, path string) error {
 
 // setupKeyCmd is `gitsi setup key`.
 func setupKeyCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("setup key", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("setup key", env.Stderr)
 	newKey := fs.String("key", "", "new key (default ~/.ssh/gitsi_ed25519; created when missing)")
 	oldKey := fs.String("old", "", "key to retire with -retire-old (default: the one used before the change)")
 	retire := fs.Bool("retire-old", false, "remove the previous key from the hub once the new one is checked")

@@ -76,6 +76,10 @@ func EdgeChecks(ctx context.Context, cfg *config.Config, tr transport.Transport,
 		add(&rs, Fail, "configuration", "the hub is missing: run 'gitsi setup edge -host <hub-ip> -user <user>'")
 		return rs
 	}
+	if err := h.Validate(); err != nil {
+		add(&rs, Fail, "configuration", "%v: fix it with 'gitsi config set <key> <value>'", err)
+		return rs
+	}
 	add(&rs, Pass, "configuration", "%s@%s", h.User, h.Host)
 	if h.KeyFile != "" {
 		if d.FileExists(h.KeyFile) {
@@ -261,6 +265,10 @@ func HubChecks(ctx context.Context, cfg *config.Config, d Deps) []Result {
 	home, _ := os.UserHomeDir()
 	lay := layout.ForHub(cfg, home) // the hub decides its layout (config.home / config.repos_dir, with defaults)
 	add(&rs, Info, "layout", "home: %s | repos: %s | mailbox: %s", lay.Home, lay.Repos, lay.Mailbox)
+	if err := lay.Check(); err != nil {
+		// the edges would reject this layout (it ends up in PowerShell commands): say it here, with the way out
+		add(&rs, Fail, "layout paths", "%v: edges cannot use it; %s", err, layout.FixHint)
+	}
 	if d.FileExists(filepath.FromSlash(lay.Repos)) {
 		add(&rs, Pass, "repos folder", "%s", lay.Repos)
 	} else {

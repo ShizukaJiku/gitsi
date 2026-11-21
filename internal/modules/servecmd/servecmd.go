@@ -5,7 +5,6 @@ package servecmd
 import (
 	"context"
 	"errors"
-	"flag"
 	"os"
 	"time"
 
@@ -41,8 +40,7 @@ func (m mod) Commands() []module.Command {
 }
 
 func (m mod) run(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr) // stdout belongs to the protocol only
+	fs := module.NewFlagSet("serve", env.Stderr) // stdout belongs to the protocol only
 	stdio := fs.Bool("stdio", false, "serve over stdin/stdout (the only mode)")
 	if err := fs.Parse(args); err != nil {
 		return err

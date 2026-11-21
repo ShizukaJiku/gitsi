@@ -27,7 +27,7 @@ func prURL(remoteURL, branch string) string {
 // has no upstream, or tracks the bridge, it sets it to origin.
 func publish(ctx context.Context, env *module.Env, args []string) error {
 	fs := newFlags("publish", env.Stderr)
-	remote := fs.String("remote", "origin", "target remote (default origin)")
+	remote := fs.String("remote", "origin", "target remote")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

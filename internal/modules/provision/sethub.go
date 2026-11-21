@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -247,8 +246,7 @@ func (d dryRun) WriteFile(p string, data []byte) error {
 
 // setupHubCmd is the `gitsi setup hub` command.
 func setupHubCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("setup hub", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("setup hub", env.Stderr)
 	edgeIP := fs.String("edge-ip", "", "edge IP (or CIDR), the only one with firewall access")
 	pub := fs.String("public-key", "", "the edge's public key (line 'ssh-ed25519 ...')")
 	pubFile := fs.String("public-key-file", "", ".pub file with the edge's public key")

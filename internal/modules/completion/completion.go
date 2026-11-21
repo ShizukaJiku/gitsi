@@ -6,7 +6,6 @@ package completion
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -84,8 +83,7 @@ var shells = func(ctx context.Context) []Shell {
 }
 
 func run(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("setup completion", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("setup completion", env.Stderr)
 	print := fs.Bool("print", false, "only print the block (to use it in this session: gitsi setup completion -print | Out-String | Invoke-Expression)")
 	off := fs.Bool("off", false, "remove tab completion from the profiles")
 	if _, err := module.ParseInterleaved(fs, args); err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,13 +43,17 @@ func (s *SSHExec) options() []string {
 	return s.commonOptions("-p", "-o", "ServerAliveInterval=30", "-o", "ForwardAgent=no", "-o", "ForwardX11=no")
 }
 
+// ConnectTimeout is ssh's and scp's deadline to reach the hub: a powered-off or unreachable hub fails in seconds instead of
+// hanging the command. Whoever waits on a session (hubclient's greeting) must wait longer, so ssh reports the cause itself.
+const ConnectTimeout = 10 * time.Second
+
 // commonOptions is the base shared by ssh and scp: key only, no agent or X11. portFlag is -p (ssh) or -P (scp).
 func (s *SSHExec) commonOptions(portFlag string, extra ...string) []string {
 	a := []string{
 		"-o", "BatchMode=yes",
 		"-o", "IdentitiesOnly=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "ConnectTimeout=10", // a powered-off or unreachable hub fails in seconds instead of hanging the command
+		"-o", "ConnectTimeout=" + strconv.Itoa(int(ConnectTimeout/time.Second)),
 	}
 	a = append(a, extra...)
 	if s.KeyFile != "" {
@@ -61,6 +66,10 @@ func (s *SSHExec) commonOptions(portFlag string, extra ...string) []string {
 }
 
 func (s *SSHExec) target() string { return s.User + "@" + s.Host }
+
+// endOfOptions goes right before the target: whatever comes after it is never read as an ssh/scp option, even if user or host
+// started with a dash (they are validated, this is the second barrier).
+const endOfOptions = "--"
 
 // trace reports a run when a Trace is configured. It shortens the remote command (it may carry base64 payloads).
 func (s *SSHExec) trace(what, command string, start time.Time, outcome string) {
@@ -99,7 +108,7 @@ func (l *lockedBuffer) String() string {
 
 // runArgs builds the arguments for a remote command.
 func (s *SSHExec) runArgs(command string) []string {
-	return append(append(s.options(), s.target()), command)
+	return append(s.options(), endOfOptions, s.target(), command)
 }
 
 // forwardArgs builds the arguments for local tunnels. Only -L, always on 127.0.0.1.
@@ -118,7 +127,7 @@ func (s *SSHExec) forwardArgs(forwards []Forward) ([]string, error) {
 		}
 		a = append(a, "-L", fmt.Sprintf("127.0.0.1:%d:%s:%d", f.LocalPort, rh, f.RemotePort))
 	}
-	return append(a, s.target()), nil
+	return append(a, endOfOptions, s.target()), nil
 }
 
 // Run implements Transport.
@@ -236,10 +245,35 @@ type Fetcher interface {
 
 var _ Fetcher = (*SSHExec)(nil)
 
-// fetchArgs builds the scp arguments to download a file.
-func (s *SSHExec) fetchArgs(remotePath, localPath string) []string {
+// fetchArgs builds the scp arguments to download a file. legacy is scp's old protocol (OpenSSH before 9.0): there the remote path
+// goes through the hub's shell, which would split a path with spaces, so it is quoted. Double quotes work for PowerShell, cmd and
+// a direct start alike, and the paths that reach here (safe.Path) carry no quotes or metacharacters. In SFTP mode (9.0 and later)
+// the path is not interpreted by a shell and quotes would become part of the name, so it goes as is.
+func (s *SSHExec) fetchArgs(remotePath, localPath string, legacy bool) []string {
+	if legacy && strings.ContainsAny(remotePath, " \t") {
+		remotePath = `"` + remotePath + `"`
+	}
 	a := s.commonOptions("-P", "-q")
-	return append(a, s.target()+":"+remotePath, localPath)
+	return append(a, endOfOptions, s.target()+":"+remotePath, localPath)
+}
+
+// legacySCP reports whether the OpenSSH that prints this version (`ssh -V`) still uses scp's old protocol by default: before 9.0.
+// An unrecognized version counts as modern (SFTP), the default of every supported Windows today.
+func legacySCP(version string) bool {
+	m := opensshVersionRe.FindStringSubmatch(version)
+	if m == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(m[1])
+	return major < 9
+}
+
+var opensshVersionRe = regexp.MustCompile(`OpenSSH_(?:for_Windows_)?(\d+)\.(\d+)`)
+
+// sshVersion runs `<ssh> -V` (it prints to stderr). A variable so tests do not depend on the installed OpenSSH.
+var sshVersion = func(ctx context.Context, bin string) string {
+	out, _ := exec.CommandContext(ctx, bin, "-V").CombinedOutput()
+	return string(out)
 }
 
 // Fetch implements Fetcher with the system's scp.exe.
@@ -248,7 +282,9 @@ func (s *SSHExec) Fetch(ctx context.Context, remotePath, localPath string) error
 	if bin == "" {
 		bin = "scp"
 	}
-	cmd := exec.CommandContext(ctx, bin, s.fetchArgs(remotePath, localPath)...)
+	// scp has no -V: the version is asked to ssh, which ships in the same OpenSSH. Only when it matters (a path with spaces).
+	legacy := strings.ContainsAny(remotePath, " \t") && legacySCP(sshVersion(ctx, s.binary()))
+	cmd := exec.CommandContext(ctx, bin, s.fetchArgs(remotePath, localPath, legacy)...)
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	start := time.Now()

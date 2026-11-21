@@ -7,7 +7,6 @@ package update
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,8 +42,7 @@ func (mod) Commands() []module.Command {
 }
 
 func run(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("update", env.Stderr)
 	publish := fs.Bool("publish", false, "(hub) publish this binary for the edges to download")
 	check := fs.Bool("check", false, "(edge) only check whether a different version exists")
 	if err := fs.Parse(args); err != nil {

@@ -91,6 +91,17 @@ func (r *registry) topNames(role config.Role) []string {
 	return append(names, r.groupNames(role)...)
 }
 
+// subNames are a group's visible subcommands for the role.
+func (r *registry) subNames(group string, role config.Role) []string {
+	var names []string
+	if g := r.groups[group]; g != nil {
+		for _, e := range g.visibleSubs(role) {
+			names = append(names, e.cmd.Name)
+		}
+	}
+	return names
+}
+
 func (r *registry) groupNames(role config.Role) []string {
 	var names []string
 	for name, g := range r.groups {

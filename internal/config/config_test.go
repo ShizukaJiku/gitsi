@@ -129,6 +129,42 @@ func TestConcurrentSavesNeverLeaveACorruptFile(t *testing.T) {
 	}
 }
 
+// The values that reach ssh's arguments are checked again (config.json may be edited by hand), with the setup rules.
+func TestHubValidate(t *testing.T) {
+	ok := Hub{Host: "192.0.2.4", User: "user", Port: 2222, KeyFile: `C:\Users\u\.ssh\gitsi_ed25519`, Alias: "gitsi-hub"}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("a valid hub: %v", err)
+	}
+	for key, mutate := range map[string]func(h *Hub){
+		"hub.host":          func(h *Hub) { h.Host = "-oProxyCommand" },
+		"hub.user":          func(h *Hub) { h.User = "-x" },
+		"hub.alias":         func(h *Hub) { h.Alias = "a b" },
+		"hub.port":          func(h *Hub) { h.Port = 70000 },
+		"hub.key_file":      func(h *Hub) { h.KeyFile = `C:\k'; calc` },
+		"hub.prev_key_file": func(h *Hub) { h.PrevKeyFile = "k\nProxyCommand x" },
+	} {
+		h := ok
+		mutate(&h)
+		if err := h.Validate(); err == nil || !strings.HasPrefix(err.Error(), key+":") {
+			t.Errorf("%s: %v", key, err)
+		}
+	}
+	// optional values may be empty
+	if err := (Hub{Host: "h", User: "u"}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Load does not reject an invalid value: that would block 'gitsi config set', the command that fixes it.
+func TestLoadKeepsInvalidHubValuesForTheFix(t *testing.T) {
+	home := isolate(t)
+	write(t, home, `{"version":1,"role":"edge","hub":{"host":"-bad","user":"u"}}`)
+	c, err := Load()
+	if err != nil || c.Hub.Validate() == nil {
+		t.Fatalf("%+v %v", c, err)
+	}
+}
+
 func TestHostAliasDefault(t *testing.T) {
 	if (Hub{}).HostAlias() != "gitsi-hub" || (Hub{Alias: "other"}).HostAlias() != "other" {
 		t.Fatal("default alias gitsi-hub; a configured one is kept")

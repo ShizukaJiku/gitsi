@@ -46,7 +46,7 @@ func newSSH(bin string) *SSHExec {
 
 func TestConnectTimeoutIsAlwaysSet(t *testing.T) {
 	s := newSSH("ssh")
-	for name, args := range map[string][]string{"run": s.runArgs("x"), "fetch": s.fetchArgs("r", "l")} {
+	for name, args := range map[string][]string{"run": s.runArgs("x"), "fetch": s.fetchArgs("r", "l", false)} {
 		if !strings.Contains(strings.Join(args, " "), "ConnectTimeout=10") {
 			t.Errorf("%s: ConnectTimeout is missing (an unreachable hub would hang the command): %v", name, args)
 		}

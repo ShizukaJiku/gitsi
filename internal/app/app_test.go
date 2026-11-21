@@ -290,6 +290,89 @@ func TestMissingHubIsNotConfigured(t *testing.T) {
 	}
 }
 
+// A likely typo gets a one-line "did you mean" (exit 2) instead of the whole help; with nothing close, the help as before.
+func TestTyposGetASuggestion(t *testing.T) {
+	setRole(t, config.RoleEdge)
+	for args, want := range map[string]string{
+		"stauts":   "did you mean gitsi status?",
+		"tkae":     "did you mean gitsi take?",
+		"reop":     "did you mean gitsi repo?",
+		"repo lst": "did you mean gitsi repo list?",
+		"job lgos": "did you mean gitsi job logs?",
+	} {
+		code, out, errb := run(t, strings.Fields(args)...)
+		if code != 2 || !strings.Contains(errb, want) || strings.Contains(errb, "Groups:") || out != "" {
+			t.Errorf("%s: %d\nstderr: %s", args, code, errb)
+		}
+	}
+	// a hub-only command is not proposed on an edge
+	if _, _, errb := run(t, "edgs"); strings.Contains(errb, "gitsi edges") {
+		t.Errorf("edges is the hub's: %s", errb)
+	}
+	code, _, errb := run(t, "xyzzy")
+	if code != 2 || strings.Contains(errb, "did you mean") || !strings.Contains(errb, "Groups:") {
+		t.Errorf("nothing close: the full help: %d %s", code, errb)
+	}
+}
+
+// A mistyped option: exit 2 (wrong usage), the cause once, the closest option, and no usage dump.
+func TestMistypedOptionIsAUsageErrorWithASuggestion(t *testing.T) {
+	setRole(t, config.RoleEdge)
+	code, out, errb := run(t, "clean", "-dryrun")
+	if code != 2 || out != "" || strings.Count(errb, "not defined: -dryrun") != 1 || !strings.Contains(errb, "did you mean -dry-run?") ||
+		strings.Contains(errb, "Usage of") {
+		t.Fatalf("%d\nstderr: %s", code, errb)
+	}
+}
+
+// 'gitsi help <command>' shows the command's help and never runs it (before, it ran the command with "help" as an argument: 'help
+// run' ran PowerShell's help on the hub). The help needs no enabled feature and no configured hub, and asking for it exits 0.
+func TestHelpForACommandShowsItsOptionsAndNeverRunsIt(t *testing.T) {
+	setRole(t, config.RoleEdge) // no hub configured, every optional feature off
+	for _, args := range [][]string{{"help", "take"}, {"take", "-h"}, {"help", "run"}, {"run", "--help"}, {"help", "repo", "get"}} {
+		code, out, errb := run(t, args...)
+		if code != 0 || !strings.Contains(out, "Options:") || strings.Contains(errb, "Enable it now") || strings.Contains(errb, "no hub configured") {
+			t.Errorf("%v: %d\nstdout: %s\nstderr: %s", args, code, out, errb)
+		}
+	}
+	if code, out, _ := run(t, "help", "run"); code != 0 || !strings.Contains(out, "-cwd") || !strings.Contains(out, `"exec"`) {
+		t.Errorf("run's help names its options and its optional feature: %s", out)
+	}
+	// nothing ran: 'run' audits every execution
+	if b, err := os.ReadFile(filepath.Join(os.Getenv("USERPROFILE"), ".gitsi", "audit.log")); err == nil && strings.Contains(string(b), "run") {
+		t.Fatalf("a help request must not run the command: %s", b)
+	}
+	// a group still lists its commands
+	if code, out, _ := run(t, "help", "repo"); code != 0 || !strings.Contains(out, "gitsi repo share") {
+		t.Errorf("%d %s", code, out)
+	}
+	// a command without options shows its summary
+	if code, out, _ := run(t, "help", "status"); code != 0 || !strings.Contains(out, "gitsi status:") {
+		t.Errorf("%d %s", code, out)
+	}
+}
+
+// A hand-edited config.json with an invalid hub value never reaches ssh: the command says what is wrong and how to fix it, and
+// 'gitsi config set' (which needs no hub) still works to fix it.
+func TestInvalidHubConfigNeverReachesSSH(t *testing.T) {
+	setRole(t, "")
+	home := os.Getenv("USERPROFILE")
+	os.MkdirAll(filepath.Join(home, ".gitsi"), 0o700)
+	b, _ := json.Marshal(map[string]any{"version": 1, "role": "edge", "hub": map[string]any{"host": "192.0.2.4", "user": "-oProxyCommand"}})
+	os.WriteFile(filepath.Join(home, ".gitsi", "config.json"), b, 0o600)
+
+	code, _, errb := run(t, "repo", "list")
+	if code != fault.NotConfigured.ExitCode() || !strings.Contains(errb, "hub.user") || !strings.Contains(errb, "gitsi config set") {
+		t.Fatalf("%d %q", code, errb)
+	}
+	if code, _, errb := run(t, "config", "set", "hub.user", "user"); code != 0 {
+		t.Fatalf("the fix must be possible: %d %q", code, errb)
+	}
+	if c, err := config.Load(); err != nil || c.Hub.User != "user" || c.Hub.Validate() != nil {
+		t.Fatalf("%+v %v", c, err)
+	}
+}
+
 // The documentation does not drift from the command registry: every visible group, shortcut and subcommand is in the README.
 func TestReadmeDocumentsEveryGroupShortcutAndSubcommand(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))

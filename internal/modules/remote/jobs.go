@@ -5,7 +5,6 @@ package remote
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 	"time"
@@ -39,6 +38,14 @@ func resolveJob(ctx context.Context, env *module.Env, dir, arg string) (string, 
 		return "", fmt.Errorf("there is no job number %d: there are %d (see gitsi job ls)", n, len(jobs))
 	}
 	return jobs[n-1].ID, nil
+}
+
+// checkJobArg validates a <n|id> argument before anything connects: a typo fails at once, without waiting for the hub.
+func checkJobArg(arg string) error {
+	if _, ok := module.Index(arg); ok || jobIDRe.MatchString(arg) {
+		return nil
+	}
+	return fmt.Errorf("invalid job: %q (a number from gitsi job ls, or an id of 8 hexadecimal characters)", arg)
 }
 
 func checkID(id string) error {
@@ -104,8 +111,7 @@ func jobsCmd(ctx context.Context, env *module.Env, _ []string) error {
 var pollInterval = time.Second
 
 func logsCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("job logs", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("job logs", env.Stderr)
 	follow := fs.Bool("f", false, "follow the output until the job ends")
 	tail := fs.Int("tail", 0, "show only the last N lines (without -f)")
 	pos, err := module.ParseInterleaved(fs, args)
@@ -114,6 +120,9 @@ func logsCmd(ctx context.Context, env *module.Env, args []string) error {
 	}
 	if len(pos) != 1 {
 		return errors.New("usage: gitsi job logs <n|id> [-f] [-tail N]")
+	}
+	if err := checkJobArg(pos[0]); err != nil {
+		return err
 	}
 	dir, err := jobsDirOf(ctx, env)
 	if err != nil {
@@ -223,6 +232,9 @@ func lastLines(s string, n int) string {
 func stopCmd(ctx context.Context, env *module.Env, args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: gitsi job stop <n|id>")
+	}
+	if err := checkJobArg(args[0]); err != nil {
+		return err
 	}
 	dir, err := jobsDirOf(ctx, env)
 	if err != nil {

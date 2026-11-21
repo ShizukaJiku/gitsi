@@ -21,8 +21,7 @@ func clone(ctx context.Context, env *module.Env, args []string) error {
 	}
 	fs := newFlags("repo get", env.Stderr)
 	dest := fs.String("dest", "", "target folder (default .\\<name>)")
-	lay, _ := env.HubLayout(ctx) // on the hub it is computed from its configuration
-	reposDir := fs.String("repos-dir", lay.Repos, "folder of the bridge repos (default: the hub's)")
+	reposDir := fs.String("repos-dir", "", "folder of the bridge repos (default: the hub's layout)")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -32,11 +31,12 @@ func clone(ctx context.Context, env *module.Env, args []string) error {
 		return err
 	}
 	if *reposDir == "" {
-		home, err := os.UserHomeDir()
+		// the same folder 'share' writes to: the hub's layout (computed from its configuration, it does not fail on a hub)
+		lay, err := env.HubLayout(ctx)
 		if err != nil {
 			return err
 		}
-		*reposDir = filepath.Join(home, "repos")
+		*reposDir = filepath.FromSlash(lay.Repos)
 	}
 	bare := filepath.Join(*reposDir, name+".git")
 	if _, err := os.Stat(bare); err != nil {

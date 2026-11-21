@@ -22,9 +22,8 @@ import (
 // (nothing else) it brings the most recent one to the clipboard.
 func (m mod) hubTake(ctx context.Context, env *module.Env, args []string) error {
 	hubCleanup(env)
-	fs := flag.NewFlagSet("take", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
-	dir := fs.String("dir", cleanup.ReceiveDir(), "target folder (default Downloads"+string(filepath.Separator)+"gitsi)")
+	fs := module.NewFlagSet("take", env.Stderr)
+	dir := fs.String("dir", "", `target folder (default Downloads\gitsi)`)
 	keep := fs.Bool("keep", false, "do not take the item out of the inbox after receiving it")
 	list := fs.Bool("list", false, "only list what is in the inbox")
 	last := fs.Bool("last", false, "only the inbox's most recent item (without typing its id)")
@@ -37,6 +36,9 @@ func (m mod) hubTake(ctx context.Context, env *module.Env, args []string) error 
 	}
 	if len(args) == 0 {
 		*last, *toClip = true, true
+	}
+	if *dir == "" { // as on the edge: not the flag's default, so -h does not print it twice
+		*dir = cleanup.ReceiveDir()
 	}
 	if *last && len(ids) > 0 {
 		return errors.New("-last does not combine with ids: choose one of the two")
@@ -131,8 +133,7 @@ func localFetch(st *mailbox.Store, it mailbox.Item) fetchFunc {
 // the clipboard (files or folders copied in Explorer, an image or a text), as on the edge.
 func (m mod) hubSend(ctx context.Context, env *module.Env, args []string) error {
 	hubCleanup(env)
-	fs := flag.NewFlagSet("send", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("send", env.Stderr)
 	text := fs.String("text", "", "text to leave; '-' reads stdin")
 	name := fs.String("name", "", "name of the text item (default text.txt)")
 	clip := fs.Bool("clip", false, "leave the clipboard: files or folders copied in Explorer, an image or a text. It is what plain 'gitsi send' does")

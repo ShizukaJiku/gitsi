@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ShizukaJiku/gitsi/internal/fault"
 	"github.com/ShizukaJiku/gitsi/internal/fsx"
+	"github.com/ShizukaJiku/gitsi/internal/safe"
 )
 
 // Role is the side this binary runs on.
@@ -37,6 +39,32 @@ func (h Hub) HostAlias() string {
 		return h.Alias
 	}
 	return "gitsi-hub"
+}
+
+// Validate checks the values that end up in ssh's arguments and in ~/.ssh/config, with the same rules as setup and 'gitsi config
+// set'. config.json may be edited by hand, so the edge checks again before connecting. It is not done in Load: an invalid value
+// must not block the very commands that fix it.
+func (h Hub) Validate() error {
+	if err := safe.Host(h.Host); err != nil {
+		return fmt.Errorf("hub.host: %w", err)
+	}
+	if err := safe.Name("user", h.User); err != nil {
+		return fmt.Errorf("hub.user: %w", err)
+	}
+	if h.Alias != "" {
+		if err := safe.Name("alias", h.Alias); err != nil {
+			return fmt.Errorf("hub.alias: %w", err)
+		}
+	}
+	if h.Port < 0 || h.Port > 65535 {
+		return fmt.Errorf("hub.port: invalid port: %d (0-65535)", h.Port)
+	}
+	for key, v := range map[string]string{"hub.key_file": h.KeyFile, "hub.prev_key_file": h.PrevKeyFile} {
+		if strings.ContainsAny(v, "'\"`;\r\n") {
+			return fmt.Errorf("%s: invalid key path: %q", key, v)
+		}
+	}
+	return nil
 }
 
 // Service is a hub service the edge sees on 127.0.0.1 through a local tunnel (-L).

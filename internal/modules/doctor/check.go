@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"context"
-	"flag"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/module"
@@ -14,8 +13,7 @@ import (
 //	          report to paste (on the edge); on the hub, the hub's diagnosis
 //	--active  also tests sending and running (only when the send/exec policy is already enabled)
 func check(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("check", env.Stderr)
 	active := fs.Bool("active", false, "also test sending and running when the policy allows it")
 	out := fs.String("out", "", "report file (default ~/.gitsi/verify-report.txt)")
 	if err := fs.Parse(args); err != nil {

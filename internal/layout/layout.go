@@ -34,10 +34,20 @@ const BinaryName = "gitsi.exe"
 //	Binary, Mailbox and Jobs always live under Home.
 //
 // That gives the hub owner ONE choice (Home) and a sensible default for everything else.
+//
+// The paths end up in PowerShell commands, so they must pass safe.Path. A profile folder with an accented letter would not: then
+// the default uses its 8.3 short name (C:/Users/JOSPRE~1), the same folder spelled with safe characters. When that does not help
+// (8.3 names disabled on the volume, or an apostrophe, which 8.3 names keep) the layout stays invalid and Check says what to do.
 func ForHub(cfg *config.Config, userHome string) Layout {
 	home := slash(cfg.Home)
 	if home == "" {
-		home = path.Join(slash(userHome), "gitsi")
+		uh := slash(userHome)
+		if safe.Path("home", uh) != nil {
+			if s := slash(ShortPath(userHome)); s != "" && safe.Path("home", s) == nil {
+				uh = s
+			}
+		}
+		home = path.Join(uh, "gitsi")
 	}
 	repos := slash(cfg.ReposDir)
 	if repos == "" {
@@ -51,6 +61,23 @@ func ForHub(cfg *config.Config, userHome string) Layout {
 		Jobs:    path.Join(home, "jobs"),
 	}
 }
+
+// ShortPath returns the 8.3 short name of an existing folder, or "" when it has none. A variable so tests do not depend on the
+// volume's settings.
+var ShortPath = shortPath
+
+// Check validates every path of the layout as FromInfo does on the edge: the hub can say what is wrong before an edge rejects it.
+func (l Layout) Check() error {
+	for _, f := range []struct{ key, v string }{{keyHome, l.Home}, {keyRepos, l.Repos}, {keyBinary, l.Binary}, {keyMailbox, l.Mailbox}, {keyJobs, l.Jobs}} {
+		if err := safe.Path(f.key, f.v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FixHint is the action for a layout that fails Check.
+const FixHint = "on the hub: gitsi config set home <folder with letters, digits, spaces, '.', '_' or '-'> (e.g. C:/gitsi)"
 
 // Keys of the Info map in the protocol greeting.
 const (

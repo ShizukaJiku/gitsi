@@ -1,39 +1,30 @@
 package app
 
 import (
-	"bytes"
-	"context"
-	"errors"
-	"flag"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
-	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
-	"github.com/ShizukaJiku/gitsi/internal/transport"
 )
-
-// refuse is a transport that goes nowhere: asking a command for -h must never leave the machine.
-type refuse struct{}
-
-var errRefused = errors.New("test transport: no network")
-
-func (refuse) Run(context.Context, string) (transport.Result, error) {
-	return transport.Result{}, errRefused
-}
-func (refuse) Stream(context.Context, string) (transport.Stream, error) { return nil, errRefused }
-func (refuse) Forward(context.Context, []transport.Forward) (transport.Tunnel, error) {
-	return nil, errRefused
-}
 
 var flagLine = regexp.MustCompile(`(?m)^\s+-([A-Za-z][A-Za-z0-9-]*)`)
 
 // helpFlags runs a command with -h in an isolated environment (temporary profile, temporary folder, no network) and returns its
 // options. ok is false when the command does not reach its FlagSet (it has no options or fails earlier in this environment).
 func helpFlags(t *testing.T, c module.Command) (flags []string, ok bool) {
+	flags, _, ok = helpOutput(t, c)
+	return flags, ok
+}
+
+// helpOutput is helpFlags plus the usage text the FlagSet printed. It goes through helpUsage, the very code 'gitsi help <cmd>'
+// uses: offline, so a command that needs the hub (or its layout) before parsing its options fails here.
+func helpOutput(t *testing.T, c module.Command) (flags []string, usage string, ok bool) {
 	t.Helper()
 	role := config.RoleEdge
 	if !c.Roles.Has(config.RoleEdge) {
@@ -42,29 +33,56 @@ func helpFlags(t *testing.T, c module.Command) (flags []string, ok bool) {
 	cfg := config.Default()
 	cfg.Role = role
 	cfg.Hub.Host, cfg.Hub.User = "hub.invalid", "nobody"
-	dir := t.TempDir()
-	var out, errb bytes.Buffer
-	env := &module.Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb, Config: cfg, Quiet: true}
-	if role == config.RoleEdge {
-		env.Transport = refuse{}
-		lay := layout.ForHub(cfg, dir)
-		env.LayoutFn = func(context.Context) (layout.Layout, error) { return lay, nil }
+	usage, ok = helpUsage(c, cfg, strings.NewReader(""))
+	if !ok {
+		return nil, "", false
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // nothing that waits may start
-	// -h alone, or after a name for the commands that require it first (repo get <name> -dest ...)
-	err := c.Run(ctx, env, []string{"-h"})
-	if !errors.Is(err, flag.ErrHelp) {
-		errb.Reset()
-		if err = c.Run(ctx, env, []string{"x", "-h"}); !errors.Is(err, flag.ErrHelp) {
-			return nil, false
-		}
-	}
-	for _, m := range flagLine.FindAllStringSubmatch(errb.String(), -1) {
+	for _, m := range flagLine.FindAllStringSubmatch(usage, -1) {
 		flags = append(flags, "-"+m[1])
 	}
 	sort.Strings(flags)
-	return flags, true
+	return flags, usage, true
+}
+
+// Every command builds its options with module.NewFlagSet: a plain flag.NewFlagSet would dump the whole usage on a typo and give
+// no suggestion.
+func TestCommandsUseModuleNewFlagSet(t *testing.T) {
+	root := filepath.Join("..", "modules")
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(b), "flag.NewFlagSet(") {
+			t.Errorf("%s: use module.NewFlagSet(name, env.Stderr)", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An option documents its default once: a non-empty flag default next to a "(default ...)" in its text prints both, the second
+// one escaped and machine-specific (`(default Downloads\gitsi) (default "C:\\Users\\...")`).
+func TestHelpShowsEachDefaultOnce(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, m := range Modules() {
+		for _, c := range m.Commands() {
+			_, usage, ok := helpOutput(t, c)
+			if !ok {
+				continue
+			}
+			for _, l := range strings.Split(usage, "\n") {
+				if strings.Count(l, "(default") > 1 {
+					t.Errorf("%s: the default is shown twice: %s", strings.TrimSpace(c.Group+" "+c.Name), strings.TrimSpace(l))
+				}
+			}
+		}
+	}
 }
 
 // The options each command declares for tab completion are those of its FlagSet: none missing, none extra. A command that

@@ -2,6 +2,9 @@ package layout
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -59,6 +62,79 @@ func TestFromInfoDistinguishesNotAnnouncedFromInvalid(t *testing.T) {
 	delete(l, keyJobs)
 	if _, err := FromInfo(l); err == nil || errors.Is(err, ErrNotAnnounced) || !strings.Contains(err.Error(), "incomplete") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// A profile folder that safe.Path rejects (an accented letter) is reached through its 8.3 short name; one that is valid is never
+// shortened; and without a safe short name the layout stays as is, and Check reports it.
+func TestForHubUsesTheShortNameOfAnUnsafeProfile(t *testing.T) {
+	asked := 0
+	old := ShortPath
+	t.Cleanup(func() { ShortPath = old })
+
+	ShortPath = func(p string) string { asked++; return `C:\Users\JOSPRE~1` }
+	l := ForHub(&config.Config{}, `C:\Users\José Pérez`)
+	if l.Home != "C:/Users/JOSPRE~1/gitsi" || l.Jobs != "C:/Users/JOSPRE~1/gitsi/jobs" || l.Check() != nil {
+		t.Fatalf("%+v", l)
+	}
+	if _, err := FromInfo(l.Info()); err != nil {
+		t.Fatalf("an edge must accept it: %v", err)
+	}
+
+	asked = 0
+	if l := ForHub(&config.Config{}, `C:\Users\user`); asked != 0 || l.Home != "C:/Users/user/gitsi" {
+		t.Fatalf("a valid profile must not be shortened: asked=%d %+v", asked, l)
+	}
+	// an explicit home is the owner's choice: never replaced
+	if l := ForHub(&config.Config{Home: "D:/g"}, `C:\Users\José Pérez`); asked != 0 || l.Home != "D:/g" {
+		t.Fatalf("asked=%d %+v", asked, l)
+	}
+
+	ShortPath = func(string) string { return "" } // 8.3 names disabled on the volume
+	l = ForHub(&config.Config{}, `C:\Users\José Pérez`)
+	if l.Home != "C:/Users/José Pérez/gitsi" || l.Check() == nil {
+		t.Fatalf("without a short name it must stay as is and fail Check: %+v", l)
+	}
+	// a short name that is still unsafe (8.3 names keep apostrophes) is not used either
+	ShortPath = func(string) string { return `C:\Users\O'BRIE~1` }
+	if l := ForHub(&config.Config{}, `C:\Users\O'Brien`); l.Home != "C:/Users/O'Brien/gitsi" {
+		t.Fatalf("%+v", l)
+	}
+}
+
+// The real GetShortPathNameW over temporary folders: an accented profile is fixed by its short name; an apostrophe is not (8.3
+// names keep it: O'BRIE~1), so the layout stays invalid and Check reports it.
+func TestShortPathOnARealFolder(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("8.3 names are Windows only")
+	}
+	base := t.TempDir()
+	mk := func(name string) string {
+		t.Helper()
+		d := filepath.Join(base, name)
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	accent, apostrophe := mk("José Pérez"), mk("O'Brien")
+	s := shortPath(accent)
+	if s == "" || strings.EqualFold(filepath.Base(s), filepath.Base(accent)) {
+		t.Skipf("the volume of %s has no 8.3 names", base)
+	}
+	if fi, err := os.Stat(s); err != nil || !fi.IsDir() {
+		t.Fatalf("the short name %q must point to the same folder: %v", s, err)
+	}
+	l := ForHub(&config.Config{}, accent)
+	if err := l.Check(); err != nil || !strings.HasPrefix(l.Home, filepath.ToSlash(s)) {
+		t.Fatalf("an accented profile must be reached through its short name %q: %+v %v", s, l, err)
+	}
+
+	if l := ForHub(&config.Config{}, apostrophe); l.Check() == nil {
+		t.Fatalf("an apostrophe survives in 8.3 names: the layout must stay invalid: %+v", l)
+	}
+	if shortPath(filepath.Join(base, "missing")) != "" {
+		t.Fatal("a path that does not exist has no short name")
 	}
 }
 

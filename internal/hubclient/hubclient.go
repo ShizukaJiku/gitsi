@@ -20,8 +20,10 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 )
 
-// HandshakeTimeout is how long each way of starting the server waits for the greeting.
-var HandshakeTimeout = 10 * time.Second
+// HandshakeTimeout is how long each way of starting the server waits for the greeting. It outlasts ssh's own connection deadline
+// (transport.ConnectTimeout) with room for PowerShell to start on the hub: with equal deadlines the greeting gives up at the very
+// moment ssh would explain why (an unreachable hub), and the cause is lost.
+var HandshakeTimeout = transport.ConnectTimeout + 10*time.Second
 
 // Conn is a negotiated session with the hub.
 type Conn struct {
@@ -92,8 +94,7 @@ func try(ctx context.Context, tr transport.Transport, m method, caps []string) (
 	select {
 	case r := <-ch:
 		if r.err != nil {
-			fe, tail := diagnose(st)
-			st.Close()
+			fe, tail := closeAndDiagnose(st)
 			if fe != nil {
 				return nil, fe
 			}
@@ -104,8 +105,7 @@ func try(ctx context.Context, tr transport.Transport, m method, caps []string) (
 		}
 		return &Conn{RW: rw, Hello: r.h, Method: m.name, stream: st}, nil
 	case <-time.After(HandshakeTimeout):
-		fe, tail := diagnose(st)
-		st.Close()
+		fe, tail := closeAndDiagnose(st)
 		if fe != nil {
 			return nil, fe
 		}
@@ -129,8 +129,11 @@ func (c *Conn) Has(cap string) bool {
 	return false
 }
 
-// diagnose asks the Stream (when it can tell) for the classified cause and the end of its stderr.
-func diagnose(st transport.Stream) (*fault.Error, string) {
+// closeAndDiagnose ends the stream and then asks it (when it can tell) for the classified cause and the end of its stderr. Closing
+// first matters: the ssh process's stderr is only fully copied once it has been waited for (Close), so reading it before would
+// miss the line that explains the failure ("Connection timed out", "Permission denied").
+func closeAndDiagnose(st transport.Stream) (*fault.Error, string) {
+	st.Close()
 	d, ok := st.(transport.StreamDiagnostics)
 	if !ok {
 		return nil, ""

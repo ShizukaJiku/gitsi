@@ -19,8 +19,7 @@ func (m mod) send(ctx context.Context, env *module.Env, args []string) error {
 	if env.Config.Role == config.RoleHub {
 		return m.hubSend(ctx, env, args)
 	}
-	fs := flag.NewFlagSet("send", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("send", env.Stderr)
 	text := fs.String("text", "", "text to send; '-' reads stdin")
 	name := fs.String("name", "", "name of the text item (default text.txt)")
 	clip := fs.Bool("clip", false, "send the clipboard: files or folders copied in Explorer, an image (PNG) or text. It is what plain 'gitsi send' does")

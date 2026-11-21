@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	nameRe   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	// A name never starts with a dash: user and host end up as ssh's target argument, where "-x" would be read as an option.
+	nameRe   = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._-]*$`)
+	hostRe   = regexp.MustCompile(`^[A-Za-z0-9._:][A-Za-z0-9._:-]{0,252}$`)
 	branchRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	pathRe   = regexp.MustCompile(`^[A-Za-z0-9:/._ -][A-Za-z0-9:/._ ~-]*$`)
 
@@ -38,7 +40,15 @@ func FileName(name string) error {
 // Name validates repo, user, host and alias names.
 func Name(what, v string) error {
 	if !nameRe.MatchString(v) || v == "." || v == ".." {
-		return fmt.Errorf("invalid %s: %q (only letters, digits, dot, dash and underscore)", what, v)
+		return fmt.Errorf("invalid %s: %q (only letters, digits, dot, dash and underscore; not starting with a dash)", what, v)
+	}
+	return nil
+}
+
+// Host validates the hub's address: a name, an IPv4 or an IPv6 (with colons), never starting with a dash.
+func Host(v string) error {
+	if !hostRe.MatchString(v) {
+		return fmt.Errorf("invalid host: %q (letters, digits, dot, dash or colon; not starting with a dash)", v)
 	}
 	return nil
 }

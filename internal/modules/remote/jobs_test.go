@@ -138,6 +138,34 @@ func envWith(t *testing.T, tr transport.Transport) *module.Env {
 	return e
 }
 
+// A job argument that is neither a list number nor an id fails at once: no layout query, no command on the hub.
+func TestJobArgumentsAreValidatedBeforeConnecting(t *testing.T) {
+	m := mod{take: func(context.Context, *module.Env, string, string) (string, error) { return "", nil }}
+	for name, call := range map[string]func(*module.Env, string) error{
+		"logs": func(e *module.Env, a string) error { return logsCmd(context.Background(), e, []string{a}) },
+		"stop": func(e *module.Env, a string) error { return stopCmd(context.Background(), e, []string{a}) },
+		"get": func(e *module.Env, a string) error {
+			return m.jobGet(context.Background(), e, []string{a, "TestResults"})
+		},
+	} {
+		for _, bad := range []string{"abc", "0", "1234", "deadbeef0", "DEADBEE", "../x"} {
+			tr := &runTr{}
+			e, _ := env(t, tr)
+			asked := false
+			e.LayoutFn = func(context.Context) (layout.Layout, error) { asked = true; return layout.Layout{}, nil }
+			err := call(e, bad)
+			if err == nil || !strings.Contains(err.Error(), "invalid job") || asked || len(tr.cmds) != 0 {
+				t.Errorf("%s %q: err=%v asked=%v cmds=%d", name, bad, err, asked, len(tr.cmds))
+			}
+		}
+	}
+	for _, ok := range []string{"1", "12", "deadbeef", "0a1b2c3d"} {
+		if err := checkJobArg(ok); err != nil {
+			t.Errorf("%q must be accepted: %v", ok, err)
+		}
+	}
+}
+
 func TestRunBGReportsFailureWhenHubDoesNotConfirm(t *testing.T) {
 	tr := &runTr{out: "Exception: something failed"}
 	e := envWith(t, tr)

@@ -13,23 +13,6 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 )
 
-// cmdTr answers per command: login ("echo gitsi-ok") and the PowerShell version are different queries.
-type cmdTr struct {
-	login, ps transport.Result
-	loginErr  error
-}
-
-func (c cmdTr) Run(_ context.Context, cmd string) (transport.Result, error) {
-	if cmd == "echo gitsi-ok" {
-		return c.login, c.loginErr
-	}
-	return c.ps, nil
-}
-func (cmdTr) Stream(context.Context, string) (transport.Stream, error) { return nil, nil }
-func (cmdTr) Forward(context.Context, []transport.Forward) (transport.Tunnel, error) {
-	return nil, nil
-}
-
 func statusEnv(tr transport.Transport) (*module.Env, *bytes.Buffer) {
 	var out bytes.Buffer
 	return &module.Env{Stdout: &out, Stderr: &out, Config: cfg(), Transport: tr}, &out

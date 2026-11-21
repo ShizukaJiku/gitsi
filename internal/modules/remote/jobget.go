@@ -19,6 +19,9 @@ func (m mod) jobGet(ctx context.Context, env *module.Env, args []string) error {
 	if m.take == nil {
 		return errors.New("job get is not available here")
 	}
+	if err := checkJobArg(args[0]); err != nil {
+		return err
+	}
 	if err := checkGetPath(args[1]); err != nil {
 		return err
 	}

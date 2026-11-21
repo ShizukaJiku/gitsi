@@ -17,9 +17,8 @@ import (
 
 // fakeTr simulates the remote shell: depending on the command, a real hub is on the other side or a mute process.
 type fakeTr struct {
-	works   func(cmd string) bool // true: the server starts with this form
-	cmds    []string
-	version uint8
+	works func(cmd string) bool // true: the server starts with this form
+	cmds  []string
 }
 
 type pipeStream struct{ net.Conn }
@@ -111,6 +110,67 @@ func TestDialDoesNotRetryOnServerError(t *testing.T) {
 	var re *proto.RemoteError
 	if !errors.As(err, &re) || tr.calls != 1 {
 		t.Fatalf("%v calls=%d", err, tr.calls)
+	}
+}
+
+// sshLikeStream behaves like the ssh process when the hub does not answer: stderr ("Connection timed out") is only complete once
+// the process is waited for, which happens in Close (exec.Cmd copies stderr until Wait). exitNow: ssh already exited (EOF on
+// stdout) instead of staying mute until the timeout.
+type sshLikeStream struct {
+	net.Conn
+	closed bool
+}
+
+func (s *sshLikeStream) Close() error { s.closed = true; return s.Conn.Close() }
+func (s *sshLikeStream) Stderr() string {
+	if !s.closed {
+		return ""
+	}
+	return "ssh: connect to host 192.0.2.10 port 22: Connection timed out"
+}
+func (s *sshLikeStream) Fault() *fault.Error {
+	if !s.closed {
+		return nil
+	}
+	return fault.Classify(s.Stderr(), fault.Where{Host: "192.0.2.10"})
+}
+
+type unreachableTr struct {
+	fakeTr
+	exitNow bool
+	calls   int
+}
+
+func (u *unreachableTr) Stream(context.Context, string) (transport.Stream, error) {
+	u.calls++
+	cl, sv := net.Pipe()
+	if u.exitNow {
+		sv.Close()
+	}
+	return &sshLikeStream{Conn: cl}, nil
+}
+
+// An unreachable hub is a network failure (exit code 11) with its action, not "is gitsi published?": the cause is read once the
+// ssh process has been waited for, and the other launch form is not tried (it would only double the wait).
+func TestDialReportsAnUnreachableHubAsANetworkFailure(t *testing.T) {
+	fast(t)
+	for _, exitNow := range []bool{false, true} {
+		tr := &unreachableTr{exitNow: exitNow}
+		_, err := Dial(context.Background(), tr)
+		fe, ok := fault.As(err)
+		if !ok || fe.Kind != fault.Unreachable {
+			t.Errorf("exitNow=%v: %v", exitNow, err)
+		}
+		if tr.calls != 1 {
+			t.Errorf("exitNow=%v: the second launch form must not be tried on a network failure (calls=%d)", exitNow, tr.calls)
+		}
+	}
+}
+
+// The greeting must wait longer than ssh's own connection deadline: otherwise both expire together and the network cause is lost.
+func TestHandshakeOutlastsTheConnectionDeadline(t *testing.T) {
+	if HandshakeTimeout <= transport.ConnectTimeout {
+		t.Fatalf("HandshakeTimeout %v must exceed ssh's ConnectTimeout %v", HandshakeTimeout, transport.ConnectTimeout)
 	}
 }
 

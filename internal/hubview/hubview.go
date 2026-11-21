@@ -117,7 +117,8 @@ func (r *Resolver) Refresh(ctx context.Context) (layout.Layout, string, error) {
 			"on the hub: gitsi update -publish (with the current gitsi)")
 	}
 	if err != nil {
-		return layout.Layout{}, "", fault.New(fault.Other, err.Error(), "update gitsi on the hub: gitsi update -publish")
+		// a current hub validates its own layout too (doctor): the usual cause is a path with characters PowerShell commands cannot carry
+		return layout.Layout{}, "", fault.New(fault.Other, err.Error(), layout.FixHint+"; or update gitsi on the hub: gitsi update -publish")
 	}
 	r.writeCache(cacheFile{Key: r.key(), Fetched: r.now(), Layout: l, HubVersion: hubVersion})
 	return l, hubVersion, nil

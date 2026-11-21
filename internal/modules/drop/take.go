@@ -3,7 +3,6 @@ package drop
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,9 +21,8 @@ func (m mod) take(ctx context.Context, env *module.Env, args []string) error {
 	if env.Config.Role == config.RoleHub {
 		return m.hubTake(ctx, env, args)
 	}
-	fs := flag.NewFlagSet("take", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
-	dir := fs.String("dir", cleanup.ReceiveDir(), "target folder (default Downloads"+string(filepath.Separator)+"gitsi)")
+	fs := module.NewFlagSet("take", env.Stderr)
+	dir := fs.String("dir", "", `target folder (default Downloads\gitsi)`)
 	keep := fs.Bool("keep", false, "do not remove the item from the outbox after receiving it")
 	list := fs.Bool("list", false, "only list what is in the outbox")
 	last := fs.Bool("last", false, "only the outbox's most recent item (without typing its id)")
@@ -37,6 +35,9 @@ func (m mod) take(ctx context.Context, env *module.Env, args []string) error {
 	}
 	if len(args) == 0 {
 		*last, *toClip = true, true // plain 'gitsi take' brings the latest to the clipboard
+	}
+	if *dir == "" { // resolved here and not as the flag's default, which -h would print as a second, escaped "(default ...)"
+		*dir = cleanup.ReceiveDir()
 	}
 	if *last && len(ids) > 0 {
 		return errors.New("-last does not combine with ids: choose one of the two")
@@ -250,7 +251,10 @@ func fetchVerified(ctx context.Context, c *mailbox.Client, env *module.Env, it m
 		return "", err
 	}
 	_, gerr := c.Get(ctx, it.ID, offset, f, transfer(env, it.Name, it.Size, "verifying"))
-	f.Close()
+	// Close flushes the file: its failure (a full disk) is the real cause, not the hash mismatch the verification would report
+	if cerr := f.Close(); gerr == nil {
+		gerr = cerr
+	}
 	if gerr != nil {
 		return "", fmt.Errorf("%w (what was downloaded stays to resume)", gerr)
 	}

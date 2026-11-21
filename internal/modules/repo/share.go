@@ -24,11 +24,6 @@ func ensureBareCmd(bare, branch, user string) string {
 
 func share(ctx context.Context, env *module.Env, args []string) error {
 	cfg := env.Config
-	lay, err := env.HubLayout(ctx) // the hub decides where the repos live; the edge asks it
-	if err != nil {
-		return err
-	}
-
 	nameArg, rest := splitName(args)
 	fs := newFlags("share", env.Stderr)
 	name := fs.String("name", nameArg, "repo name on the hub (default: the folder's)")
@@ -37,6 +32,11 @@ func share(ctx context.Context, env *module.Env, args []string) error {
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 	noPush := fs.Bool("no-push", false, "create the repo and the remote without pushing")
 	if err := fs.Parse(rest); err != nil {
+		return err
+	}
+	// after the options: -h answers without connecting
+	lay, err := env.HubLayout(ctx) // the hub decides where the repos live; the edge asks it
+	if err != nil {
 		return err
 	}
 

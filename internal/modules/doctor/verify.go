@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -28,8 +27,7 @@ import (
 // (network, firewall, the SSH session's PATH, binaries) in a report that can be pasted as is. By default it changes nothing;
 // with -active it also tests sending and remote running, only when the policy already allows them.
 func verify(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("check", env.Stderr)
 	active := fs.Bool("active", false, "also send a test text to the mailbox and run 'hostname' (only when the send/exec policy is enabled)")
 	out := fs.String("out", "", "report file (default ~/.gitsi/verify-report.txt)")
 	if err := fs.Parse(args); err != nil {

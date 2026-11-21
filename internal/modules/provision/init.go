@@ -3,7 +3,6 @@ package provision
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -20,8 +19,7 @@ import (
 
 // initCmd sets this machine up as an edge: key, ~/.ssh/config, gitsi's config and a connection test.
 func initCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("setup edge", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("setup edge", env.Stderr)
 	host := fs.String("host", "", "hub IP or name")
 	user := fs.String("user", "", "user on the hub")
 	port := fs.Int("port", 0, "hub's SSH port (default 22)")

@@ -6,7 +6,6 @@ package cleancmd
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -36,8 +35,7 @@ func (mod) Commands() []module.Command {
 }
 
 func run(_ context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("clean", env.Stderr)
 	dry := fs.Bool("dry-run", false, "only show what would be removed")
 	if err := fs.Parse(args); err != nil {
 		return err

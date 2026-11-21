@@ -5,7 +5,6 @@ package remote
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -60,8 +59,7 @@ func run(ctx context.Context, env *module.Env, args []string) error {
 }
 
 func runWith(ctx context.Context, env *module.Env, args []string, take Taker) error {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("run", env.Stderr)
 	cwd := fs.String("cwd", "", "working folder on the hub")
 	get := fs.String("get", "", "with -repo: when done, bring this path of the working clone (relative) to Downloads\\gitsi")
 	repo := fs.Bool("repo", false, "take the current folder as is (uncommitted changes included) to the repo's working clone on the hub and run there")
@@ -127,8 +125,7 @@ func runWith(ctx context.Context, env *module.Env, args []string, take Taker) er
 
 // startCmd is `job start`: it starts the command in the background on the hub (in the foreground, with live output, it is `run`).
 func startCmd(ctx context.Context, env *module.Env, args []string) error {
-	fs := flag.NewFlagSet("job start", flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
+	fs := module.NewFlagSet("job start", env.Stderr)
 	cwd := fs.String("cwd", "", "working folder on the hub")
 	repo := fs.Bool("repo", false, "take the current folder as is (uncommitted changes included) to the repo's working clone on the hub and start there")
 	if err := fs.Parse(args); err != nil {

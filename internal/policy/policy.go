@@ -67,8 +67,8 @@ func oneField(s string) string {
 	}, s)
 }
 
-// AuditMaxSize: past it, audit.log becomes audit.log.1 (replacing the previous one) and a new one starts. The record never takes
-// more than about twice this size.
+// AuditMaxSize is the size past which audit.log becomes audit.log.1 (replacing the previous one) and a new one starts. The record
+// never takes more than about twice this size.
 var AuditMaxSize int64 = 1 << 20
 
 func rotate(path string) {

@@ -41,8 +41,7 @@ func splitName(args []string) (string, []string) {
 }
 
 func newFlags(name string, w io.Writer) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(w)
+	fs := module.NewFlagSet(name, w)
 	return fs
 }
 

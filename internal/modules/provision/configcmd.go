@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,8 +20,6 @@ import (
 // `gitsi config` shows and changes the configuration without editing the JSON by hand. Values are validated as during setup,
 // and those that affect the connection (host, user, port, key, alias) also regenerate the ~/.ssh/config block git uses: that way
 // there are no two sources of truth drifting apart.
-
-var hostRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,253}$`)
 
 type setting struct {
 	name    string
@@ -38,8 +35,8 @@ func settings() []setting {
 	return []setting{
 		{"hub.host", "hub IP or name", func(c *config.Config) string { return c.Hub.Host },
 			func(c *config.Config, v string) error {
-				if !hostRe.MatchString(v) {
-					return fmt.Errorf("invalid host: %q (letters, digits, dot, dash or colon)", v)
+				if err := safe.Host(v); err != nil {
+					return err
 				}
 				c.Hub.Host = v
 				return nil
@@ -269,7 +266,7 @@ func setOnOff(dst *bool, v string) error {
 	return nil
 }
 
-// completeConfig proposes 'config”s actions, the keys for get/set and on/off for the keys that accept it.
+// completeConfig proposes the actions of 'gitsi config', the keys for get/set and on/off for the keys that accept it.
 func completeConfig(_ context.Context, env *module.Env, args []string) []string {
 	switch {
 	case len(args) == 0:
