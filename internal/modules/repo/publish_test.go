@@ -18,9 +18,12 @@ func TestPRURL(t *testing.T) {
 		"https://gitlab.example.com/a/b.git": "",
 	}
 	for in, want := range cases {
-		if got := prURL(in, "feat"); got != want {
+		if got := prURL(in, "", "feat"); got != want {
 			t.Errorf("prURL(%q) = %q, want %q", in, got, want)
 		}
+	}
+	if got := prURL("https://github.com/acme/app", "next", "feat"); got != "https://github.com/acme/app/compare/next...feat?expand=1" {
+		t.Error(got)
 	}
 }
 

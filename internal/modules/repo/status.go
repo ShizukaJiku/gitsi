@@ -60,6 +60,9 @@ func repoStatus(ctx context.Context, env *module.Env, args []string) error {
 			}
 		}
 		ahead, behind, ok := aheadBehind(ctx, g, br, r.name)
+		if n, published := sincePublish(ctx, g, br, r.name); published {
+			ahead, behind = n, 0
+		}
 		switch {
 		case !ok:
 			fmt.Fprintf(env.Stdout, "%-18s branch '%s' does not exist there (or 'gitsi repo status -fetch' is needed)\n", r.label, br)

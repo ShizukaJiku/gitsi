@@ -3,6 +3,28 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-23
+
+### Added
+- `gitsi publish` shows how many commits the branch and the PR have, whose they are and how much they change. It finds the branch the
+  PR goes to; `-base` chooses another.
+- `gitsi publish` warns when the PR will conflict with its base or the bridge has newer commits, and stops when there is nothing to
+  publish (for example, a branch whose PR was merged).
+- `gitsi sync` on the edge, when both sides have new commits, shows the hub's and asks whether to replace them; the replaced version
+  stays recoverable on the bridge.
+- `gitsi sync` carries an amended or rebased edge branch to the hub, and on the hub takes the edge's version when nothing of the
+  hub's own is lost. It warns about uncommitted changes.
+
+### Changed
+- `gitsi publish` pushes the branch as one commit authored by the edge's Git user, replacing the branch on origin with
+  `--force-with-lease`. The local branch and the bridge do not change. It stops when someone's commits on origin would be lost, and
+  never rewrites shared branches.
+- `gitsi repo status` compares a published branch with what was published.
+
+### Fixed
+- `gitsi publish` and `gitsi sync` with a detached HEAD (or during a rebase) stop instead of using `main`.
+- `gitsi sync` no longer reports uncommitted changes that block it as diverging branches.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added
@@ -55,5 +77,6 @@ First public release.
   completion for PowerShell, global `-v`, `-q` and `--json`, and stable exit codes per error category.
 - Release archives for Windows amd64 and arm64 with SHA256 checksums.
 
+[1.2.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.0.0

@@ -59,9 +59,18 @@ Received items go to `Downloads\gitsi` by default.
 ## Features
 
 **D11 - Repos through a bridge.** The hub keeps one bare repo per project. `share` creates it (with the right branch and owner) and
-pushes; `get` brings it (on the hub, it makes the working clone); `sync` pulls and pushes the current branch, fast-forward only;
-`publish` pushes to `origin` (never to the bridge) and leaves the upstream there. Nothing uses `-u` toward the bridge: a plain
-`git push` does not go to the hub.
+pushes; `get` brings it (on the hub, it makes the working clone); `sync` pulls and pushes the current branch, without merging. When
+the branches diverge the edge's wins only if nothing is lost unseen: the edge replaces the bridge's branch when its own branch had
+already contained everything there (its reflog proves it), or after showing the hub's new commits and asking. The push has an
+explicit lease and leaves the replaced version in `refs/gitsi/replaced/<branch>/tip` (one per branch). The hub adopts a replaced
+branch (`git reset --keep`) when all its commits had been on the bridge (reflog of the tracking ref); it never pushes back what the
+edge dropped; `publish` pushes to `origin` (never to the bridge) and leaves the upstream there. It pushes one commit, authored by
+the edge's Git user: squash and author reset are done on a commit built aside (`git commit-tree`), so the local branch and the
+bridge keep their history and `sync` does not diverge. The base is the shared branch with the fewest commits of difference (the
+default one on a tie), or `-base`, and it is remembered. The last publish is noted in the branch's Git configuration. The branch on
+origin is replaced with an explicit `--force-with-lease=<ref>:<commit>`, only when everything in it is in the local branch or was
+published by gitsi; what this clone did not publish is replaced only after asking. Shared branches (the remote's default one, the
+base, `develop`, `release/*`...) get a plain push. Nothing uses `-u` toward the bridge: a plain `git push` does not go to the hub.
 
 **D12 - Services through local tunnels.** `svc` opens `-L` tunnels in the foreground toward the hub's services, always on
 `127.0.0.1`. `svc up <name>` adds a well-known service (postgres, redis...) to the catalog on its own. `svc up -docker` asks the hub

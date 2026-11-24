@@ -28,11 +28,21 @@ git commit ... ; gitsi sync                # push to the bridge
 # EDGE - bring and publish
 gitsi sync                                 # brings feature/x from the bridge
 # test whatever depends on resources only the edge reaches
-gitsi publish                              # pushes the branch to origin and prints the PR URL
+gitsi publish                              # pushes the branch to origin as one commit of yours and prints the PR URL
 ```
 
-If the PR review asks for changes, the cycle repeats on the same branch. To bring to the hub what was merged on origin: on the
+If the PR review asks for changes, the cycle repeats on the same branch: `publish` replaces the PR's commit. The local branch keeps
+its own commits, so `git status` may show it as diverged from origin: update the PR with `gitsi publish`, not with a pull and push
+(`gitsi repo status` shows what is left to send). Commits added to the PR on origin must be brought first; `publish` stops and says
+how. To bring to the hub what was merged on origin: on the
 edge `git pull origin main`, then `gitsi sync`.
+
+To go back to the hub after working on the edge:
+
+```powershell
+git commit ... ; gitsi sync                # EDGE: sends the commits; after an amend or rebase, replaces the hub's (asks if it has new work)
+gitsi sync                                 # HUB: takes the edge's version
+```
 
 ## What runs where
 

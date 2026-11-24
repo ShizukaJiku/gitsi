@@ -44,8 +44,8 @@ Download `gitsi-<version>-windows-amd64.zip` (or `arm64`) from the [releases](ht
 check it against `SHA256SUMS.txt`, and put `gitsi.exe` in a folder on your PATH:
 
 ```powershell
-Get-FileHash .\gitsi-1.1.0-windows-amd64.zip -Algorithm SHA256     # compare with SHA256SUMS.txt
-Expand-Archive .\gitsi-1.1.0-windows-amd64.zip $env:LOCALAPPDATA\gitsi\bin
+Get-FileHash .\gitsi-1.2.0-windows-amd64.zip -Algorithm SHA256     # compare with SHA256SUMS.txt
+Expand-Archive .\gitsi-1.2.0-windows-amd64.zip $env:LOCALAPPDATA\gitsi\bin
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:LOCALAPPDATA\gitsi\bin", "User")
 gitsi version
 ```
@@ -101,12 +101,22 @@ Daily shortcuts: `status`, `share`, `sync`, `publish`, `send`, `take`. `gitsi <g
 ```powershell
 gitsi share                 # EDGE: copies the current repo to the hub (right branch and owner) and adds the 'hub' remote
 gitsi repo get <name>       # HUB: working clone of the local bridge, in the current folder
-gitsi sync                  # both: pulls and pushes the current branch (when they diverge it stops; never a silent merge)
-gitsi publish               # EDGE: pushes the current branch to origin (never to the bridge) and prints the PR URL
+gitsi sync                  # both: pulls and pushes the current branch (never a silent merge)
+gitsi publish               # EDGE: pushes the branch to origin as one commit of yours (never to the bridge) and prints the PR URL
 gitsi repo get <name>       # EDGE: brings a repo born on the hub (without origin: git remote add origin <url>)
 gitsi repo list             # the bridge's repos
 gitsi repo status [-fetch]  # what is left to send/receive against the bridge and origin
 ```
+When the edge rewrote commits it already had (amend, rebase), `sync` replaces them on the bridge; `gitsi sync` on the hub then takes
+the edge's version. If both sides have new commits, `sync` on the edge shows the hub's and asks whether to replace them. A replaced
+version stays in a hidden ref of the bridge (the last one of each branch). On the hub, `sync` never discards commits that were not
+on the bridge, nor uncommitted changes. The edge only sees what the hub has synced: sync there before switching machines.
+
+`publish` squashes the branch and sets your Git user as the author, without touching your local branch or the bridge, and replaces
+the branch on origin with `--force-with-lease`, showing the commits and their authors. It stops when origin has someone's commits
+that would be lost, asks before replacing commits it did not publish, and never rewrites shared branches (the default one,
+`develop`, `release/*`...). The PR goes to the shared branch yours comes from; `-base <branch>` chooses another.
+
 The full cycle (edge -> hub -> origin) is in [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
 ## Guide: mailbox for files, folders, text and images (opt-in)
