@@ -114,6 +114,16 @@ edge it is always started by hand, in a terminal or in the tray. Hotkey, change 
 `syscall`; images and files, PowerShell. Auto mode skips this process's own writes and copies marked private by password managers.
 Full design in `CLIP.md`.
 
+**D27 - The tray menu runs gitsi itself.** For whoever prefers not to type commands, `watch -tray` offers the daily part of gitsi
+in its menu: mailbox, repos' working folders, services, jobs, edges, settings and features. Each entry runs the same binary as a
+child (`gitsi take -clip <id>`, `gitsi repo sync` in the folder) without interactive input, instead of calling the modules: the
+same policies, audit and messages, and `watchcmd` depends on no other module. Lists come from caches read in the background
+(`--json`), so the menu opens at once. Turning a policy on from the menu explains it, asks with No as the default and goes through
+`gitsi policy set`. Tunnels opened from the menu live in a job object and close with it. To list working folders, `repo share`,
+`repo get` and `repo sync` record them in `~/.gitsi/workdirs.json` (at most 50, missing ones forgotten). The menu is native (Win32
+through `syscall`, submenus, glyphs, dark mode); the icon, the glyphs and the executable's icon are drawn in code. Details in
+`TRAY.md`.
+
 **D16 - The hub's Docker with the official client.** The hub publishes `docker.exe` and the `compose` and `buildx` plugins. `gitsi
 docker` (it requires `exec`) downloads them verifying their SHA256, adds their folder to the account's PATH and creates the
 `gitsi-hub` context (`host=ssh://<alias>`): Docker talks over SSH on its own and gitsi stays out of that traffic. The PATH is edited

@@ -196,6 +196,15 @@ func TestHubGetAndListUseTheLocalBridge(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dst, "a.txt")); string(b) != "hola" {
 		t.Fatal("get on the hub must clone from the local bridge")
 	}
+	if !recorded(t, "demo", dst) {
+		t.Fatal("the hub's working folder is recorded for the tray")
+	}
+	out.Reset()
+	env.JSON = true
+	if err := list(context.Background(), env, nil); err != nil || strings.Join(strings.Fields(out.String()), "") != `["demo"]` {
+		t.Fatalf("list --json: %v %q", err, out)
+	}
+	env.JSON = false
 	out.Reset()
 	env.Config.ReposDir = filepath.ToSlash(filepath.Join(tmp, "empty"))
 	if err := list(context.Background(), env, nil); err != nil || !strings.Contains(out.String(), "No repos") {

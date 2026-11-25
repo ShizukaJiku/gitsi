@@ -110,6 +110,23 @@ func (g *Git) HasRef(ctx context.Context, ref string) bool {
 	return err == nil
 }
 
+// AheadBehind counts the commits of HEAD that remote/branch lacks (ahead) and the other way round (behind), against the last fetch;
+// ok is false when the remote lacks the branch.
+func (g *Git) AheadBehind(ctx context.Context, branch, remote string) (ahead, behind int, ok bool) {
+	ref := "refs/remotes/" + remote + "/" + branch
+	if !g.HasRef(ctx, ref) {
+		return 0, 0, false
+	}
+	out, err := g.Out(ctx, "rev-list", "--left-right", "--count", "HEAD..."+ref)
+	if err != nil {
+		return 0, 0, false
+	}
+	if _, err := fmt.Sscanf(strings.Join(strings.Fields(out), " "), "%d %d", &ahead, &behind); err != nil {
+		return 0, 0, false
+	}
+	return ahead, behind, true
+}
+
 // Root returns the root of the repository that contains Dir.
 func (g *Git) Root(ctx context.Context) (string, error) {
 	return g.Out(ctx, "rev-parse", "--show-toplevel")

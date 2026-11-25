@@ -14,6 +14,9 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	shell32  = syscall.NewLazyDLL("shell32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	gdi32    = syscall.NewLazyDLL("gdi32.dll")
+	ntdll    = syscall.NewLazyDLL("ntdll.dll")
+	ole32    = syscall.NewLazyDLL("ole32.dll")
 
 	procRegisterClassExW              = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW               = user32.NewProc("CreateWindowExW")
@@ -44,6 +47,21 @@ var (
 	procSetForegroundWindow           = user32.NewProc("SetForegroundWindow")
 	procGetCursorPos                  = user32.NewProc("GetCursorPos")
 	procLoadIconW                     = user32.NewProc("LoadIconW")
+	procGetSystemMetrics              = user32.NewProc("GetSystemMetrics")
+	procCreateIconIndirect            = user32.NewProc("CreateIconIndirect")
+	procDestroyIcon                   = user32.NewProc("DestroyIcon")
+	procMessageBoxW                   = user32.NewProc("MessageBoxW")
+	procSHBrowseForFolderW            = shell32.NewProc("SHBrowseForFolderW")
+	procSHGetPathFromIDListW          = shell32.NewProc("SHGetPathFromIDListW")
+	procCoInitializeEx                = ole32.NewProc("CoInitializeEx")
+	procCoUninitialize                = ole32.NewProc("CoUninitialize")
+	procCoTaskMemFree                 = ole32.NewProc("CoTaskMemFree")
+	procCreateDIBSection              = gdi32.NewProc("CreateDIBSection")
+	procCreateBitmap                  = gdi32.NewProc("CreateBitmap")
+	procDeleteObject                  = gdi32.NewProc("DeleteObject")
+	procRtlGetVersion                 = ntdll.NewProc("RtlGetVersion")
+	procGetProcAddress                = kernel32.NewProc("GetProcAddress")
+	procLoadLibraryW                  = kernel32.NewProc("LoadLibraryW")
 	procShellNotifyIconW              = shell32.NewProc("Shell_NotifyIconW")
 	procGetModuleHandleW              = kernel32.NewProc("GetModuleHandleW")
 	procGlobalLock                    = kernel32.NewProc("GlobalLock")
@@ -81,15 +99,29 @@ const (
 	mfString       = 0x0000
 	mfGrayed       = 0x0001
 	mfChecked      = 0x0008
+	mfPopup        = 0x0010
 	mfSeparator    = 0x0800
 	tpmRightButton = 0x0002
 	tpmNoNotify    = 0x0080
 	tpmReturnCmd   = 0x0100
 
-	modNoRepeat        = 0x4000
-	idiApplication     = 32512
-	hotkeyID           = 1
-	errorAlreadyExists = 183
+	modNoRepeat         = 0x4000
+	idiApplication      = 32512
+	smCxSmIcon          = 49
+	bifReturnOnlyFsDirs = 0x0001
+	bifNewDialogStyle   = 0x0040
+	coinitApartment     = 0x2
+	maxPath             = 260
+	mbOK                = 0x0000
+	mbYesNo             = 0x0004
+	mbIconQuestion      = 0x0020
+	mbIconInformation   = 0x0040
+	mbDefButton2        = 0x0100
+	mbSetForeground     = 0x10000
+	mbTopmost           = 0x40000
+	idYes               = 6
+	hotkeyID            = 1
+	errorAlreadyExists  = 183
 
 	cfBitmap      = 2
 	cfDIB         = 8
@@ -152,6 +184,52 @@ type notifyIconData struct {
 	balloonIcon     uintptr
 }
 
+// bitmapInfoHeader is BITMAPINFOHEADER (the color table that follows it in BITMAPINFO is not used for 32-bit pixels).
+type bitmapInfoHeader struct {
+	size          uint32
+	width         int32
+	height        int32
+	planes        uint16
+	bitCount      uint16
+	compression   uint32
+	sizeImage     uint32
+	xPelsPerMeter int32
+	yPelsPerMeter int32
+	clrUsed       uint32
+	clrImportant  uint32
+}
+
+// browseInfo is BROWSEINFOW.
+type browseInfo struct {
+	owner       uintptr
+	root        uintptr
+	displayName *uint16
+	title       *uint16
+	flags       uint32
+	callback    uintptr
+	lParam      uintptr
+	image       int32
+}
+
+// iconInfo is ICONINFO.
+type iconInfo struct {
+	icon     int32
+	xHotspot uint32
+	yHotspot uint32
+	mask     uintptr
+	color    uintptr
+}
+
+// osVersionInfo is RTL_OSVERSIONINFOW.
+type osVersionInfo struct {
+	size     uint32
+	major    uint32
+	minor    uint32
+	build    uint32
+	platform uint32
+	csd      [128]uint16
+}
+
 // Desktop is a running message loop with its window, hotkey, clipboard listener and tray icon.
 type Desktop struct {
 	opt Options
@@ -163,7 +241,11 @@ type Desktop struct {
 	done           chan struct{}
 	mu             sync.Mutex
 	tooltip        string
+	iconState      IconState
+	icon           uintptr // the tray icon being shown when it is ours (destroyed when replaced); loop's thread only
+	iconShown      IconState
 	menu           []MenuItem
+	drawing        *menuBuild // the menu being shown (loop's thread only): WM_MEASUREITEM and WM_DRAWITEM draw from it
 	notes          [][2]string
 	writes         []textWrite
 	trayAdded      bool
@@ -184,7 +266,7 @@ func Start(opt Options) (*Desktop, error) {
 		currentMu.Unlock()
 		return nil, errors.New("the desktop loop is already running in this process")
 	}
-	d := &Desktop{opt: opt, tooltip: opt.Tooltip, menu: append([]MenuItem(nil), opt.Menu...), done: make(chan struct{})}
+	d := &Desktop{opt: opt, tooltip: opt.Tooltip, iconState: opt.Icon, menu: append([]MenuItem(nil), opt.Menu...), done: make(chan struct{})}
 	current = d
 	currentMu.Unlock()
 
@@ -209,6 +291,7 @@ func (d *Desktop) loop(ready chan<- error) {
 		currentMu.Unlock()
 	}()
 
+	allowDarkMenus()
 	inst, _, _ := procGetModuleHandleW.Call(0)
 	cls, _ := syscall.UTF16PtrFromString("gitsiDesktopWindow")
 	wc := wndClassEx{wndProc: wndProcCb, instance: inst, className: cls}
@@ -291,6 +374,16 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case wmUpdate:
 		d.apply()
 		return 0
+	case wmMeasureItem:
+		if m := *(**measureItem)(unsafe.Pointer(&lParam)); m.ctlType == odtMenu && d.drawing != nil {
+			d.drawing.measure(m)
+			return 1
+		}
+	case wmDrawItem:
+		if di := *(**drawItem)(unsafe.Pointer(&lParam)); di.ctlType == odtMenu && d.drawing != nil {
+			d.drawing.draw(di)
+			return 1
+		}
 	case wmClose:
 		d.teardown()
 		procDestroyWindow.Call(hwnd)
@@ -319,10 +412,11 @@ func (d *Desktop) addTray() error {
 	n := d.iconData()
 	n.flags = nifMessage | nifIcon | nifTip
 	n.callbackMessage = wmTray
-	n.icon, _, _ = procLoadIconW.Call(0, idiApplication)
 	d.mu.Lock()
 	copyUTF16(n.tip[:], d.tooltip)
+	st := d.iconState
 	d.mu.Unlock()
+	n.icon = d.setIconHandle(st)
 	if ok, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&n))); ok == 0 {
 		return fmt.Errorf("could not add the tray icon: %v", err)
 	}
@@ -339,7 +433,7 @@ type textWrite struct {
 // apply runs on the loop's thread: the clipboard writes, the tooltip and the notifications other goroutines queued.
 func (d *Desktop) apply() {
 	d.mu.Lock()
-	tip, notes, writes := d.tooltip, d.notes, d.writes
+	tip, notes, writes, st := d.tooltip, d.notes, d.writes, d.iconState
 	d.notes, d.writes = nil, nil
 	d.mu.Unlock()
 	for _, w := range writes {
@@ -351,6 +445,10 @@ func (d *Desktop) apply() {
 	n := d.iconData()
 	n.flags = nifTip
 	copyUTF16(n.tip[:], tip)
+	if st != d.iconShown || d.icon == 0 {
+		n.flags |= nifIcon
+		n.icon = d.setIconHandle(st)
+	}
 	procShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&n)))
 	for _, note := range notes {
 		n := d.iconData()
@@ -372,34 +470,115 @@ func (d *Desktop) popup() {
 	if len(items) == 0 {
 		return
 	}
-	menu, _, _ := procCreatePopupMenu.Call()
+	if d.opt.OnOpen != nil {
+		go d.opt.OnOpen()
+	}
+	// The actions come from the very copy shown: a refresh while the menu is open cannot change what an entry does.
+	d.mu.Lock()
+	st := d.iconState
+	d.mu.Unlock()
+	b := newMenuBuild(st, lightTheme()) // ids start at 1: 0 is "nothing chosen"
+	menu := b.build(items)
+	defer b.free() // fonts, brushes and bitmaps outlive the menu's window, not the menu
+	d.drawing = b
+	defer func() { d.drawing = nil }()
 	if menu == 0 {
 		return
 	}
-	defer procDestroyMenu.Call(menu)
-	for _, it := range items {
-		if it.ID == 0 && it.Label == "" {
-			procAppendMenuW.Call(menu, mfSeparator, 0, 0)
-			continue
-		}
-		flags := uintptr(mfString)
-		if it.Checked {
-			flags |= mfChecked
-		}
-		if it.Disabled {
-			flags |= mfGrayed
-		}
-		label, _ := syscall.UTF16PtrFromString(it.Label)
-		procAppendMenuW.Call(menu, flags, uintptr(it.ID), uintptr(unsafe.Pointer(label)))
-	}
+	defer procDestroyMenu.Call(menu) // it destroys the submenus attached to it too
+	actions := b.actions
 	var p point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
 	// Without the foreground the menu does not close when the user clicks elsewhere (a documented quirk of tray menus).
 	procSetForegroundWindow.Call(d.hwnd)
 	id, _, _ := procTrackPopupMenu.Call(menu, tpmRightButton|tpmReturnCmd|tpmNoNotify, uintptr(p.x), uintptr(p.y), 0, d.hwnd, 0)
 	procPostMessageW.Call(d.hwnd, wmNull, 0, 0)
-	if id != 0 && d.opt.OnMenu != nil {
-		d.opt.OnMenu(int(id))
+	if id > 0 && int(id) < len(actions) && actions[id] != nil {
+		go actions[id]() // never on the loop's thread: an action may wait for the network or a dialog
+	}
+}
+
+// lightTheme reports whether applications use the light theme (the menu's glyphs then go dark). Unknown means dark: the menu
+// follows the system's dark mode on the builds allowDarkMenus enables.
+func lightTheme() bool {
+	var k syscall.Handle
+	p, _ := syscall.UTF16PtrFromString(`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`)
+	if syscall.RegOpenKeyEx(syscall.HKEY_CURRENT_USER, p, 0, syscall.KEY_READ, &k) != nil {
+		return false
+	}
+	defer syscall.RegCloseKey(k)
+	name, _ := syscall.UTF16PtrFromString("AppsUseLightTheme")
+	var v, typ uint32
+	n := uint32(4)
+	if syscall.RegQueryValueEx(k, name, nil, &typ, (*byte)(unsafe.Pointer(&v)), &n) != nil {
+		return false
+	}
+	return v != 0
+}
+
+// setIconHandle makes the icon for a state at the size the tray uses and keeps it as the one shown; the previous one is destroyed
+// (the caller hands the new one to Shell_NotifyIcon right away). When drawing fails, the system's application icon stands in.
+func (d *Desktop) setIconHandle(st IconState) uintptr {
+	d.iconShown = st
+	h := makeIcon(st)
+	if h == 0 {
+		h, _, _ = procLoadIconW.Call(0, idiApplication)
+		return h
+	}
+	if d.icon != 0 {
+		procDestroyIcon.Call(d.icon)
+	}
+	d.icon = h
+	return h
+}
+
+// makeIcon turns IconPixels into a 32-bit icon with alpha; 0 when Windows refuses.
+func makeIcon(st IconState) uintptr {
+	size := 16
+	if r, _, _ := procGetSystemMetrics.Call(smCxSmIcon); int(r) > 0 {
+		size = int(r)
+	}
+	px := IconPixels(size, st)
+	bi := bitmapInfoHeader{width: int32(size), height: -int32(size), planes: 1, bitCount: 32} // negative height: rows top-down
+	bi.size = uint32(unsafe.Sizeof(bi))
+	var bits uintptr
+	color, _, _ := procCreateDIBSection.Call(0, uintptr(unsafe.Pointer(&bi)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if color == 0 || bits == 0 {
+		return 0
+	}
+	defer procDeleteObject.Call(color)
+	procRtlMoveMemory.Call(bits, uintptr(unsafe.Pointer(&px[0])), uintptr(len(px)))
+	maskBits := make([]byte, ((size+15)/16)*2*size) // all zero: with 32-bit pixels the alpha decides, the mask only has to exist
+	mask, _, _ := procCreateBitmap.Call(uintptr(size), uintptr(size), 1, 1, uintptr(unsafe.Pointer(&maskBits[0])))
+	if mask == 0 {
+		return 0
+	}
+	defer procDeleteObject.Call(mask)
+	ii := iconInfo{icon: 1, mask: mask, color: color}
+	h, _, _ := procCreateIconIndirect.Call(uintptr(unsafe.Pointer(&ii)))
+	return h
+}
+
+// allowDarkMenus lets the tray menu follow Windows' dark mode. Windows offers that to applications only through uxtheme's unnamed
+// exports 135 (SetPreferredAppMode) and 136 (FlushMenuThemes), stable since Windows 10 1903 (build 18362); on older builds those
+// numbers are other functions, so nothing is called there and the menu stays light.
+func allowDarkMenus() {
+	vi := osVersionInfo{}
+	vi.size = uint32(unsafe.Sizeof(vi))
+	if r, _, _ := procRtlGetVersion.Call(uintptr(unsafe.Pointer(&vi))); r != 0 || vi.major < 10 || (vi.major == 10 && vi.build < 18362) {
+		return
+	}
+	name, _ := syscall.UTF16PtrFromString("uxtheme.dll")
+	h, _, _ := procLoadLibraryW.Call(uintptr(unsafe.Pointer(name)))
+	if h == 0 {
+		return
+	}
+	const allowDark = 1
+	if p, _, _ := procGetProcAddress.Call(h, 135); p != 0 {
+		syscall.SyscallN(p, allowDark)
+	}
+	if p, _, _ := procGetProcAddress.Call(h, 136); p != 0 {
+		syscall.SyscallN(p)
 	}
 }
 
@@ -415,6 +594,10 @@ func (d *Desktop) teardown() {
 		procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&n)))
 		d.trayAdded = false
 	}
+	if d.icon != 0 {
+		procDestroyIcon.Call(d.icon)
+		d.icon = 0
+	}
 }
 
 // SetTooltip changes the tray icon's tooltip.
@@ -423,6 +606,57 @@ func (d *Desktop) SetTooltip(s string) {
 	d.tooltip = s
 	d.mu.Unlock()
 	procPostMessageW.Call(d.hwnd, wmUpdate, 0, 0)
+}
+
+// SetIcon changes the state the tray icon shows.
+func (d *Desktop) SetIcon(st IconState) {
+	d.mu.Lock()
+	d.iconState = st
+	d.mu.Unlock()
+	procPostMessageW.Call(d.hwnd, wmUpdate, 0, 0)
+}
+
+// Confirm asks a yes/no question in a dialog of its own and waits for the answer. No is the default button, so a stray Enter does
+// not agree. It blocks: call it from a menu action, never from the loop.
+func (d *Desktop) Confirm(title, text string) bool {
+	return messageBox(title, text, mbYesNo|mbIconQuestion|mbDefButton2) == idYes
+}
+
+// Message shows a text in a dialog of its own and waits until it is closed. Like Confirm, it blocks.
+func (d *Desktop) Message(title, text string) {
+	messageBox(title, text, mbOK|mbIconInformation)
+}
+
+func messageBox(title, text string, flags uintptr) uintptr {
+	runtime.LockOSThread() // the dialog runs its own message loop on this thread
+	defer runtime.UnlockOSThread()
+	t, _ := syscall.UTF16PtrFromString(title)
+	m, _ := syscall.UTF16PtrFromString(text)
+	r, _, _ := procMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), flags|mbSetForeground|mbTopmost)
+	return r
+}
+
+// PickFolder asks for a folder in the system's dialog and waits for it. ok is false when the user cancels. Like Confirm, it
+// blocks: call it from a menu action.
+func (d *Desktop) PickFolder(title string) (string, bool) {
+	runtime.LockOSThread() // the dialog and COM belong to this thread
+	defer runtime.UnlockOSThread()
+	if r, _, _ := procCoInitializeEx.Call(0, coinitApartment); int32(r) >= 0 {
+		defer procCoUninitialize.Call() // only when this call initialized it (S_OK or S_FALSE)
+	}
+	t, _ := syscall.UTF16PtrFromString(title)
+	var name [maxPath]uint16
+	bi := browseInfo{title: t, displayName: &name[0], flags: bifReturnOnlyFsDirs | bifNewDialogStyle}
+	pidl, _, _ := procSHBrowseForFolderW.Call(uintptr(unsafe.Pointer(&bi)))
+	if pidl == 0 {
+		return "", false
+	}
+	defer procCoTaskMemFree.Call(pidl)
+	var path [maxPath]uint16
+	if r, _, _ := procSHGetPathFromIDListW.Call(pidl, uintptr(unsafe.Pointer(&path[0]))); r == 0 {
+		return "", false // a place that is not a folder on disk (a library, "This PC")
+	}
+	return syscall.UTF16ToString(path[:]), true
 }
 
 // SetMenu replaces the tray menu (it is built each time it opens).

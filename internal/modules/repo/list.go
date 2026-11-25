@@ -23,6 +23,12 @@ func list(ctx context.Context, env *module.Env, _ []string) error {
 	if err != nil {
 		return err
 	}
+	if env.JSON {
+		if names == nil {
+			names = []string{}
+		}
+		return env.PrintJSON(names)
+	}
 	if len(names) == 0 {
 		if env.Config.Role == config.RoleHub {
 			fmt.Fprintln(env.Stdout, "No repos on the bridge yet (the edge creates them with 'gitsi share').")

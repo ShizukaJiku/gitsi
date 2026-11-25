@@ -46,6 +46,9 @@ func syncCmd(ctx context.Context, env *module.Env, args []string) error {
 	if err := safe.Name("remote", rn); err != nil {
 		return err
 	}
+	if rn == env.Config.RemoteName || (isHub && rn == "origin") {
+		remember(ctx, g, root, rn) // a folder synced with the bridge shows in the tray's Repos
+	}
 	br, err := g.Out(ctx, "branch", "--show-current")
 	if err != nil {
 		return err

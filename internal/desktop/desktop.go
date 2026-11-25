@@ -19,13 +19,31 @@ var ErrUnsupported = errors.New("the tray, the hotkey and the shared clipboard n
 // ErrRunning is returned by Lock when another instance holds the lock.
 var ErrRunning = errors.New("already running")
 
-// MenuItem is an entry of the tray menu. ID 0 with an empty Label is a separator.
+// MenuItem is an entry of the tray menu. An empty Label is a separator. An entry with Sub opens a submenu (its own Action is not
+// used). Action runs on a goroutine of its own when the entry is chosen: it may take as long as it needs. A tab in Label starts
+// the right-hand column, in grey (a shortcut, a state). Icon shows a glyph beside it (a check mark replaces it when Checked).
+// Default shows it in bold (a title) and Note adds a second, grey line under it. Badge shows a count as a colored pill.
 type MenuItem struct {
-	ID       int
 	Label    string
+	Note     string
+	Badge    string
 	Checked  bool
 	Disabled bool
+	Default  bool
+	Icon     Glyph
+	Action   func()
+	Sub      []MenuItem
 }
+
+// IconState is what the tray icon shows in its corner: the state of watch at a glance.
+type IconState int
+
+// The tray icon's states.
+const (
+	IconConnected IconState = iota // edge: connected to the hub (green dot)
+	IconHub                        // hub: sharing its clipboard (blue dot)
+	IconRetrying                   // edge: not connected, retrying (amber dot)
+)
 
 // Options configures Start.
 type Options struct {
@@ -33,11 +51,12 @@ type Options struct {
 	Clipboard bool   // be told of every clipboard change (auto mode)
 	Tray      bool   // show the tray icon
 	Tooltip   string
+	Icon      IconState
 	Menu      []MenuItem
 
 	OnHotkey    func()
 	OnClipboard func()
-	OnMenu      func(id int)
+	OnOpen      func() // the menu is about to open (it shows what SetMenu gave last; a refresh shows on the next opening)
 }
 
 // Hotkey modifiers (RegisterHotKey's MOD_* values).

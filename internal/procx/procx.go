@@ -30,6 +30,14 @@ func isConsole(f *os.File) bool {
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
+// StartTree starts cmd so that stop ends it together with every process it starts: killing a gitsi child alone would leave
+// its ssh.exe running (a tunnel nobody can close). On Windows the child goes into a job object that also ends when this process
+// does. The child is placed in it right after it starts, before it gets to start processes of its own in practice (a gitsi child
+// reads its configuration first). stop is safe to call more than once.
+func StartTree(cmd *exec.Cmd) (stop func(), err error) {
+	return startTree(cmd)
+}
+
 // Detached prepares cmd to keep running on its own after this process and its terminal end (the tray): no console, and its own
 // process group, so a Ctrl+C in the terminal that started it does not reach it.
 func Detached(cmd *exec.Cmd) *exec.Cmd {

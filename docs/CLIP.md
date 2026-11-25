@@ -20,7 +20,7 @@ Then: Ctrl+C on one machine, **Ctrl+Shift+Alt+C** (the hotkey: "send what I copi
 
 | Topic | Behavior |
 |---|---|
-| Sending | With the **hotkey** by default. `gitsi config set clip.auto on` (or "Send every copy" in the tray menu) sends every copy on its own. |
+| Sending | With the **hotkey** by default. `gitsi config set clip.auto on` (or Settings > "Send every copy" in the tray menu) sends every copy on its own. |
 | Receiving | Always automatic: what arrives is written to the clipboard; the user only presses Ctrl+V. There is no paste hotkey. |
 | Hotkey | `clip.hotkey`, `ctrl+shift+alt+c` by default, with at least two modifiers. Ctrl+Alt+C / Ctrl+Alt+V are taken by Office (copyright sign, paste special) and Ctrl+Alt is AltGr on many layouts. A hotkey another program holds is reported; receiving keeps working. |
 | Size | Text, image and files up to `clip.max_size_mb` (20 MB by default, 256 at most); larger content is reported and not sent. Each side applies its own limit to what it receives. |
@@ -111,7 +111,7 @@ without walking it whole.
   start sending on a hotkey. The hub reads its own policy live (at most once a second): turning it on or off applies to the
   sessions already open, without the edges reconnecting; while it is off the hub refuses what edges send and delivers nothing.
 - Each item sent or received leaves a line in `audit.log` (kind, size, sha256, id, origin), never the content.
-- Configuration changes apply when watch restarts, except "Send every copy" in the tray menu, which also saves `clip.auto`.
+- Configuration changes apply when watch restarts, except Settings > "Send every copy" in the tray menu, which also saves `clip.auto`.
 
 ## 7. The process: terminal or tray
 
@@ -119,8 +119,9 @@ without walking it whole.
   watch stays in the terminal and the clipboard works the same.
 - One watch per profile (a named lock `Local\gitsi-watch-<hash of the configuration's path>`), in the tray or in a terminal: a
   second one says so and exits.
-- The tray menu: state, "Send the clipboard now", "Send every copy", "Open the log", "Quit". The tooltip shows the state and the
-  last item. Problems (a hotkey taken, an item too large or refused) also appear as notifications.
+- The tray menu has "Send what I copied" (the hotkey's action) and, in Settings, "Send every copy" (`clip.auto`); the rest of
+  the menu (mailbox, repos, services, jobs, edges, features) is described in `TRAY.md`. The tooltip shows the state and the last
+  item. Problems (a hotkey taken, an item too large or refused) also appear as notifications.
 - In the tray, watch's lines go to `%LOCALAPPDATA%\gitsi\watch.log`, which becomes `watch.log.1` past 1 MiB.
 - Reconnection, reactions and the restart after `auto_update` stay as in `WATCH.md`; after an update the tray process starts a new
   one in the tray.
@@ -149,7 +150,8 @@ without walking it whole.
 - `internal/watch`: both directions over in-memory pipes with the real `hub.Serve`, the origin set by the hub, no repeats across a
   reconnection, nothing from before watch started, refusals with their reason.
 - `internal/desktop`: hotkey parsing, struct sizes, the lock, the Run key over a temporary key, and the real loop against Windows
-  (listener, counter, private formats, direct text, tray, hotkey) with `GITSI_REAL_CLIPBOARD=1`.
+  (listener, counter, private formats, direct text, tray, hotkey) with `GITSI_REAL_CLIPBOARD=1`. The menu's own tests are listed
+  in `TRAY.md`.
 - `internal/modules/watchcmd`: the hub's watch with a fake desktop and clipboard (hotkey to the slot, slot to the clipboard, the
   tray menu, `-autostart`, a second instance, the log).
 - `scripts/e2e-ssh.ps1`: a clipboard item from the edge reaches the hub's slot and one from the hub reaches the edge, over a real

@@ -47,7 +47,9 @@ internal/
   progress           console progress (phases, transfers) (leaf)
   version            version, commit and build date (leaf)
   winps              launches powershell.exe without the PSModulePath inherited from PowerShell 7 (leaf)
-  procx              helper processes without a console window of their own; detached processes for the tray (leaf)
+  procx              helper processes without a console window of their own; detached processes for the tray; process
+                     trees that stop together (job objects: a tunnel's ssh.exe) (leaf)
+  workdirs           the working folders of the bridge's repos on this machine, for the tray (~/.gitsi/workdirs.json)
   testhome           tests only: TestMain with a temporary profile (nothing touches the user's real data)
   -- system adapters --
   transport          Transport interface + SSHExec (ssh.exe/scp.exe): Run, Stream, Forward (-L only); optional
@@ -55,7 +57,8 @@ internal/
   gitx               git.exe wrapper (injectable Runner)
   clipboard          reading and writing the Windows clipboard (PowerShell -STA, through winps)
   desktop            the user's desktop through the Windows API (syscall): hotkey, clipboard listener and counter, direct
-                     text, tray icon and menu, single-instance lock, the hub's logon entry
+                     text, tray icon, glyphs and the executable's icon resource (drawn in code), menu with submenus and dialogs,
+                     single-instance lock, the hub's logon entry
   install            publishing the binary itself (moves the previous one aside when in use) and hashes
   dockercli          the official docker client for the edge: publish it on the hub, download and verify it, account PATH, context
   -- protocol and mailbox --

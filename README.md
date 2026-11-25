@@ -196,6 +196,11 @@ gitsi config set watch.auto_take C:\Users\me\Downloads\gitsi    # pull whatever 
 gitsi config set watch.report on                                # leave each reaction's result in the hub's inbox
 gitsi config set watch.auto_fetch on                            # with watch open inside a repo: git fetch when it changes on the hub
 ```
+With `gitsi watch -tray` it lives in the tray instead, and its menu covers daily use without typing commands: the mailbox
+(take, view, discard, send what you copied), the repos' working folders (state, sync, publish, get one from the hub), the hub's
+services (open and close tunnels), jobs (output, stop), the settings and the optional features (turned on after explaining them).
+The icon's dot shows the state ([`docs/TRAY.md`](docs/TRAY.md)).
+
 When the network drops or the hub goes off, `watch` reconnects on its own (5 s, 10 s, 30 s, 1 min, up to 5 min) and neither
 repeats nor loses notices.
 
@@ -272,7 +277,7 @@ They go **before** the command (after it they belong to the command, so they nev
 ```powershell
 gitsi -v repo list        # verbose: shows each real ssh command and how long it takes (to stderr)
 gitsi -q send report.pdf  # quiet: no progress or side information; results and errors stay
-gitsi --json check        # pure JSON on stdout (also: svc ls, job ls, take -list, edges)
+gitsi --json check        # pure JSON on stdout (also: svc ls, job ls, take -list, repo list, edges)
 ```
 Also `GITSI_VERBOSE=1` and `GITSI_QUIET=1`. `-v` and `-q` do not combine. `gitsi version` shows each binary's version, commit and
 build date.

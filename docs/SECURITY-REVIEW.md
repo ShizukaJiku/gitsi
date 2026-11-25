@@ -45,7 +45,8 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
 Every helper process whose output gitsi reads is started with `CREATE_NO_WINDOW`, so no console window flashes on the desktop.
 
 ### Files it writes
-- `%USERPROFILE%\.gitsi\`: `config.json` (configuration), `hub-layout.json` (cache), `watch-state.json`, `audit.log` (rotates past
+- `%USERPROFILE%\.gitsi\`: `config.json` (configuration), `hub-layout.json` (cache), `watch-state.json`, `workdirs.json` (the repos' working
+  folders the tray lists), `audit.log` (rotates past
   1 MiB).
 - `%USERPROFILE%\.ssh\config` (adds/replaces **only** the `gitsi-hub` block), `known_hosts` (gitsi pins the hub's fingerprint when
   the user gives it), `gitsi_ed25519` and `.pub` (its own key).

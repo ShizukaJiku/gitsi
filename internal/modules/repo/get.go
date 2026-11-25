@@ -64,6 +64,7 @@ func get(ctx context.Context, env *module.Env, args []string) error {
 	if err := ensureCheckout(ctx, env, gitx.New(dst), cfg.RemoteName); err != nil {
 		return err
 	}
+	remember(ctx, gitx.New(dst), dst, cfg.RemoteName)
 	fmt.Fprintf(env.Stdout, "Got it in %s (remote '%s'). Add 'origin' if the repo has one: git remote add origin <url>\n", dst, cfg.RemoteName)
 	return nil
 }

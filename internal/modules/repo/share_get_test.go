@@ -15,6 +15,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
+	"github.com/ShizukaJiku/gitsi/internal/workdirs"
 )
 
 // fakeHub is a Transport whose Run delegates to a test function. The "real" hub is a temporary folder: git reaches it because
@@ -115,6 +116,9 @@ func TestShareThenGetRoundTrip(t *testing.T) {
 	if !strings.Contains(r.out.String(), "Repo created on the hub") {
 		t.Fatal(r.out.String())
 	}
+	if !recorded(t, "demo", src) {
+		t.Fatal("the shared folder is recorded for the tray")
+	}
 	bare := r.repos + "/demo.git"
 	if got := gitCmd(t, bare, "log", "--oneline", "trunk"); !strings.Contains(got, "init") {
 		t.Fatalf("the hub did not receive the commit: %s", got)
@@ -146,9 +150,29 @@ func TestShareThenGetRoundTrip(t *testing.T) {
 	if gitCmd(t, dst, "branch", "--show-current") != "trunk" {
 		t.Fatal("get must end up on the real branch")
 	}
+	if !recorded(t, "demo", dst) {
+		t.Fatal("the folder get created is recorded for the tray")
+	}
 	if err := get(context.Background(), r.env, []string{"demo", "-dest", dst}); err == nil {
 		t.Fatal("get on an existing target must fail")
 	}
+}
+
+// recorded reports whether internal/workdirs holds that folder for that repo.
+func recorded(t *testing.T, repo, dir string) bool {
+	t.Helper()
+	dirs, err := workdirs.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(dir)
+	for _, d := range dirs {
+		got, _ := filepath.EvalSymlinks(d.Path)
+		if d.Repo == repo && strings.EqualFold(got, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func gitxOut(dir string, args ...string) (string, error) {

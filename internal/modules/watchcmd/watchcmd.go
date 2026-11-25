@@ -165,7 +165,7 @@ func (s *session) runEdge(ctx context.Context) error {
 	sum, _ := install.FileSHA256(self)
 	id := identity(sum)
 	r := &reactor{cfg: env.Config.Watch, self: execSelf, fetch: fetchHere(env.Config.RemoteName, env.Config.Hub.HostAlias()),
-		out: s.out, edge: id.User + "@" + id.Edge, now: time.Now}
+		out: s.out, edge: id.User + "@" + id.Edge, now: time.Now, liveUpdate: func() bool { return s.liveConfig().Watch.AutoUpdate }}
 	id.Reactions = r.names()
 	var hubClip atomic.Bool // the hub of the current session shares its clipboard
 	var told atomic.Bool    // the user was already told it does not
@@ -185,9 +185,19 @@ func (s *session) runEdge(ctx context.Context) error {
 			}
 			return conn.RW, func() { conn.Close() }, nil
 		},
-		Fatal:     fatal,
-		Identity:  id,
-		React:     r.react,
+		Fatal:    fatal,
+		Identity: id,
+		React: func(ctx context.Context, e watch.Event) bool {
+			switch e.Type { // the menu shows the news
+			case watch.EvOutbox:
+				s.background(func() { s.refreshMailbox(ctx) })
+			case watch.EvJobDone:
+				s.background(func() { s.refreshJobs(ctx) })
+			case watch.EvRepo:
+				s.background(func() { s.refreshRepos(ctx, true) })
+			}
+			return r.react(ctx, e)
+		},
 		StatePath: filepath.Join(home, ".gitsi", "watch-state.json"),
 		Out:       s.out,
 		Audit:     s.audit,

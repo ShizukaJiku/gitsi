@@ -12,18 +12,7 @@ import (
 
 // aheadBehind returns (ahead, behind) of the local branch against remote/branch; ok=false when the remote lacks the branch.
 func aheadBehind(ctx context.Context, g *gitx.Git, branch, remote string) (ahead, behind int, ok bool) {
-	ref := "refs/remotes/" + remote + "/" + branch
-	if !g.HasRef(ctx, ref) {
-		return 0, 0, false
-	}
-	out, err := g.Out(ctx, "rev-list", "--left-right", "--count", "HEAD..."+ref)
-	if err != nil {
-		return 0, 0, false
-	}
-	if _, err := fmt.Sscanf(strings.Join(strings.Fields(out), " "), "%d %d", &ahead, &behind); err != nil {
-		return 0, 0, false
-	}
-	return ahead, behind, true
+	return g.AheadBehind(ctx, branch, remote)
 }
 
 // repoStatus shows, without touching the network by default, what is left to send or receive on the bridge and on origin.

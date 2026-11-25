@@ -89,6 +89,7 @@ func share(ctx context.Context, env *module.Env, args []string) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Remote '%s' -> %s\n", *remote, url)
+	remember(ctx, g, root, *remote)
 	_ = policy.Audit(cfg.Policy, "share", *name)
 
 	if *noPush {

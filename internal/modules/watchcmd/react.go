@@ -66,6 +66,8 @@ type reactor struct {
 	out   io.Writer
 	edge  string
 	now   func() time.Time
+	// liveUpdate reads watch.auto_update as it is now (the tray's Settings change it while watch runs); nil: cfg's value.
+	liveUpdate func() bool
 }
 
 // names are the active reactions (announced to the hub for 'gitsi edges').
@@ -94,7 +96,11 @@ func (r *reactor) printf(format string, a ...any) {
 func (r *reactor) react(ctx context.Context, e watch.Event) bool {
 	switch e.Type {
 	case watch.EvUpdate:
-		if !r.cfg.AutoUpdate {
+		auto := r.cfg.AutoUpdate
+		if r.liveUpdate != nil {
+			auto = r.liveUpdate()
+		}
+		if !auto {
 			return false
 		}
 		r.printf("installing the new version...")

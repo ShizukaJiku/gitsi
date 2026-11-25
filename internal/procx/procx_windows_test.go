@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
+	"unsafe"
 )
 
 func flags(cmd *exec.Cmd) uint32 {
@@ -57,5 +60,43 @@ func TestDetached(t *testing.T) {
 	c := Detached(exec.Command("cmd.exe"))
 	if flags(c) != detachedProcess|createNewProcessGroup || !c.SysProcAttr.HideWindow {
 		t.Fatalf("flags = %#x", flags(c))
+	}
+}
+
+func TestJobStructLayouts(t *testing.T) {
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("sizes checked for 64-bit Windows")
+	}
+	if n := unsafe.Sizeof(jobLimits{}); n != 144 {
+		t.Fatalf("JOBOBJECT_EXTENDED_LIMIT_INFORMATION is 144 bytes on 64-bit Windows, got %d", n)
+	}
+	if n := unsafe.Sizeof(jobAccounting{}); n != 48 {
+		t.Fatalf("JOBOBJECT_BASIC_ACCOUNTING_INFORMATION is 48 bytes, got %d", n)
+	}
+}
+
+// Stopping a tree ends the child and the process it started (cmd.exe and its ping.exe, like gitsi and its ssh.exe).
+func TestStartTreeStopsTheGrandchildren(t *testing.T) {
+	c := Background(exec.Command("cmd.exe", "/c", "ping -n 60 127.0.0.1 >nul"))
+	tr, err := newTree(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for tr.active() < 2 {
+		if time.Now().After(deadline) {
+			tr.stop()
+			t.Fatalf("the grandchild must be in the job: %d process(es)", tr.active())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	tr.stop()
+	tr.stop() // twice is harmless
+	done := make(chan struct{})
+	go func() { _ = c.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the child must end when the tree stops")
 	}
 }

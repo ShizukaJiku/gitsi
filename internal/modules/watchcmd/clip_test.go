@@ -18,6 +18,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/desktop"
 	"github.com/ShizukaJiku/gitsi/internal/fault"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/workdirs"
 )
 
 // fakeUI records what watch asks of the desktop and lets the test press the hotkey or pick a menu entry.
@@ -27,6 +28,11 @@ type fakeUI struct {
 	tips   []string
 	menus  [][]desktop.MenuItem
 	notes  []string
+	icons  []desktop.IconState
+	asked  []string
+	answer bool   // what Confirm answers
+	pick   string // what PickFolder answers ("" = cancelled)
+	shown  []string
 	closed bool
 	done   chan struct{}
 }
@@ -45,6 +51,76 @@ func (f *fakeUI) Notify(t, m string, _ bool) {
 	f.notes = append(f.notes, t+": "+m)
 	f.mu.Unlock()
 }
+func (f *fakeUI) SetIcon(st desktop.IconState) {
+	f.mu.Lock()
+	f.icons = append(f.icons, st)
+	f.mu.Unlock()
+}
+func (f *fakeUI) Confirm(_, text string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, text)
+	return f.answer
+}
+func (f *fakeUI) Message(title, text string) {
+	f.mu.Lock()
+	f.shown = append(f.shown, title+": "+text)
+	f.mu.Unlock()
+}
+func (f *fakeUI) PickFolder(string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pick, f.pick != ""
+}
+
+// set changes the fake's answers while watch may be reading them.
+func (f *fakeUI) set(answer bool, pick string) {
+	f.mu.Lock()
+	f.answer, f.pick = answer, pick
+	f.mu.Unlock()
+}
+
+func (f *fakeUI) questions() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.asked...)
+}
+
+func (f *fakeUI) messages() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.shown...)
+}
+
+// lastMenu is the menu as watch last set it (or as it started).
+func (f *fakeUI) lastMenu() []desktop.MenuItem {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.menus) > 0 {
+		return f.menus[len(f.menus)-1]
+	}
+	return f.opt.Menu
+}
+
+func (f *fakeUI) noted() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return strings.Join(f.notes, " | ")
+}
+
+// findEntry finds a menu entry, at any depth, whose label starts with the given text.
+func findEntry(items []desktop.MenuItem, prefix string) *desktop.MenuItem {
+	for i := range items {
+		if strings.HasPrefix(items[i].Label, prefix) {
+			return &items[i]
+		}
+		if e := findEntry(items[i].Sub, prefix); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 func (f *fakeUI) Close()                 { f.mu.Lock(); f.closed = true; f.mu.Unlock() }
 func (f *fakeUI) Done() <-chan struct{}  { return f.done }
 func (f *fakeUI) WriteText(string) error { return errors.New("the fake writes through the board") }
@@ -77,6 +153,14 @@ func (b *fakeBoard) seq() uint32  { b.mu.Lock(); defer b.mu.Unlock(); return b.n
 func fakeDesktop(t *testing.T, hotkeyErr error) (*fakeUI, *fakeBoard) {
 	u, b := &fakeUI{done: make(chan struct{})}, &fakeBoard{}
 	oldStart, oldR, oldW, oldSeq, oldPriv, oldLock, oldPoll, oldText := startUI, readClip, writeClip, clipSeq, clipPriv, lock, slotPoll, readText
+	oldRun, oldTunnel, oldDirs, oldInspect := runSelf, startTunnel, listWorkdirs, inspectRepo
+	oldFolder, oldFile, oldTerm := openFolder, openFile, openTerminal
+	runSelf = func(context.Context, string, ...string) (string, string, error) { return "[]", "", nil } // never the test binary itself
+	startTunnel = func(string) (func(), <-chan string, error) { return nil, nil, errors.New("no tunnels in this test") }
+	listWorkdirs = func() ([]workdirs.Dir, error) { return nil, nil }
+	openFolder = func(string) error { return nil }
+	openFile = func(string) error { return nil }
+	openTerminal = func(string) error { return nil }
 	readText = func() (string, bool, error) { return "", false, nil }
 	startUI = func(o desktop.Options) (ui, error, error) {
 		u.mu.Lock()
@@ -89,6 +173,8 @@ func fakeDesktop(t *testing.T, hotkeyErr error) (*fakeUI, *fakeBoard) {
 	slotPoll = 10 * time.Millisecond
 	t.Cleanup(func() {
 		startUI, readClip, writeClip, clipSeq, clipPriv, lock, slotPoll, readText = oldStart, oldR, oldW, oldSeq, oldPriv, oldLock, oldPoll, oldText
+		runSelf, startTunnel, listWorkdirs, inspectRepo = oldRun, oldTunnel, oldDirs, oldInspect
+		openFolder, openFile, openTerminal = oldFolder, oldFile, oldTerm
 	})
 	return u, b
 }
@@ -151,7 +237,7 @@ func TestHubWatchSharesItsClipboardThroughTheSlot(t *testing.T) {
 	slot.Put(it, data)
 	waitUntil(t, "the hub's clipboard", func() bool { return board.text() == "copied on the edge" })
 
-	u.options().OnMenu(menuQuit)
+	findEntry(u.options().Menu, "Quit").Action()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -209,28 +295,17 @@ func TestHotkeyTakenIsReported(t *testing.T) {
 
 // The tray's "Send every copy" switches auto mode and saves it in the configuration read again from disk.
 func TestTrayMenuTogglesAutoAndSavesIt(t *testing.T) {
-	u, _ := fakeDesktop(t, nil)
 	env, _ := clipHubEnv(t, true)
 	if err := env.Config.Save(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- watchCmd(ctx, env, nil) }()
-	waitUntil(t, "the desktop", func() bool { return u.options().OnMenu != nil })
-	var auto *desktop.MenuItem
-	for i, m := range u.options().Menu {
-		if m.ID == menuAuto {
-			auto = &u.options().Menu[i]
-		}
-	}
+	_, u := trayMenu(t, env, &fakeGitsi{})
+	auto := findEntry(findEntry(u.options().Menu, "Settings").Sub, "Send every copy")
 	if auto == nil || auto.Checked {
-		t.Fatalf("the menu offers auto mode, off by default: %+v", u.options().Menu)
+		t.Fatalf("Settings offers auto mode, off by default: %+v", u.options().Menu)
 	}
-	u.options().OnMenu(menuAuto)
+	auto.Action()
 	waitUntil(t, "the saved configuration", func() bool { c, _ := config.Load(); return c.Clip.Auto })
-	cancel()
-	<-done
 }
 
 func TestAutostartIsForTheHubOnly(t *testing.T) {
@@ -314,7 +389,7 @@ func TestEdgeWithoutClipStartsNoDesktop(t *testing.T) {
 	if err := s.startUI(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if u.options().OnMenu != nil || !strings.Contains(out.String(), "policy set clip on") {
+	if u.options().Menu != nil || !strings.Contains(out.String(), "policy set clip on") {
 		t.Fatalf("%+v\n%s", u.options(), out)
 	}
 }
@@ -325,7 +400,7 @@ func TestWatchStopsWhenTheWindowCloses(t *testing.T) {
 	env, _ := clipHubEnv(t, true)
 	done := make(chan error, 1)
 	go func() { done <- watchCmd(context.Background(), env, nil) }()
-	waitUntil(t, "the desktop", func() bool { return u.options().OnMenu != nil })
+	waitUntil(t, "the desktop", func() bool { return u.options().Menu != nil })
 	close(u.done)
 	select {
 	case <-done:

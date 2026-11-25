@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,8 +17,10 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/clipboard"
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/desktop"
+	"github.com/ShizukaJiku/gitsi/internal/mailbox"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/policy"
+	"github.com/ShizukaJiku/gitsi/internal/watch"
 )
 
 // childEnv marks the process 'watch -tray' starts detached: it is the one that stays in the tray.
@@ -34,20 +35,15 @@ func lockName() string {
 	return "gitsi-watch-" + hex.EncodeToString(sum[:8])
 }
 
-// Tray menu entries.
-const (
-	menuStatus = iota + 1
-	menuSend
-	menuAuto
-	menuLog
-	menuQuit
-)
-
 // ui is the part of the desktop watch uses (a fake in tests).
 type ui interface {
 	SetTooltip(string)
 	SetMenu([]desktop.MenuItem)
+	SetIcon(desktop.IconState)
 	Notify(title, message string, warning bool)
+	Confirm(title, text string) bool
+	Message(title, text string)
+	PickFolder(title string) (string, bool)
 	Close()
 	Done() <-chan struct{}
 	WriteText(string) error
@@ -79,7 +75,19 @@ type session struct {
 	log    *rotatingLog
 	sharer *clip.Sharer
 	ui     ui
+	ctx    context.Context // the session's, for what the menu starts
 	cancel func()
+
+	// What the tray menu shows, read in the background (menu*.go), and the tunnels it opened.
+	mailbox  cache[[]mailbox.Item]
+	repos    cache[[]repoState]
+	bridge   cache[[]string]
+	services cache[[]svcRow]
+	jobs     cache[[]jobRow]
+	edges    cache[[]watch.EdgeState]
+	tunnels  tunnels
+	bg       sync.WaitGroup // what the session started in the background (close waits for it)
+	closing  bool           // set by close under mu: nothing new starts in the background after it
 
 	mu        sync.Mutex
 	connected bool
@@ -187,7 +195,7 @@ func (s *session) startUI(ctx context.Context) error {
 	if !s.clipOn && !s.tray {
 		return nil
 	}
-	o := desktop.Options{Tray: s.tray, Tooltip: s.tooltip(), Menu: s.menu(), OnMenu: func(id int) { go s.onMenu(ctx, id) }}
+	o := desktop.Options{Tray: s.tray, Tooltip: s.tooltip(), Icon: s.icon(), Menu: s.menu(ctx), OnOpen: func() { s.background(func() { s.onOpen(ctx) }) }}
 	if s.clipOn {
 		o.Hotkey, o.Clipboard = s.env.Config.Clip.HotkeyOrDefault(), true
 		o.OnHotkey = func() { go func() { _ = s.sharer.Share(ctx, false) }() }
@@ -198,8 +206,9 @@ func (s *session) startUI(ctx context.Context) error {
 		return fmt.Errorf("could not start the clipboard sharing or the tray: %w", err)
 	}
 	s.mu.Lock()
-	s.ui = u
+	s.ui, s.ctx = u, ctx
 	s.mu.Unlock()
+	s.background(func() { s.refreshAll(ctx) }) // the first lists, so the menu has them by the time it opens
 	go func() {
 		select {
 		case <-u.Done(): // the window was closed from outside: watch stops with it
@@ -240,54 +249,28 @@ func (s *session) state() string {
 	return "not connected (retrying)"
 }
 
-func (s *session) menu() []desktop.MenuItem {
+// icon is the state the tray icon shows.
+func (s *session) icon() desktop.IconState {
 	s.mu.Lock()
-	state := s.state()
-	s.mu.Unlock()
-	items := []desktop.MenuItem{{ID: menuStatus, Label: "gitsi watch: " + state, Disabled: true}, {}}
-	if s.clipOn {
-		items = append(items,
-			desktop.MenuItem{ID: menuSend, Label: "Send the clipboard now\t" + desktop.HotkeyLabel(s.env.Config.Clip.HotkeyOrDefault())},
-			desktop.MenuItem{ID: menuAuto, Label: "Send every copy", Checked: s.sharer.Auto()})
+	defer s.mu.Unlock()
+	switch {
+	case s.env.Config.Role == config.RoleHub:
+		return desktop.IconHub
+	case s.connected:
+		return desktop.IconConnected
 	}
-	if s.log != nil {
-		items = append(items, desktop.MenuItem{ID: menuLog, Label: "Open the log"})
-	}
-	return append(items, desktop.MenuItem{}, desktop.MenuItem{ID: menuQuit, Label: "Quit"})
+	return desktop.IconRetrying
 }
 
-// refresh updates the tooltip and the menu after a change.
+// refresh updates the tooltip, the icon and the menu after a change.
 func (s *session) refresh() {
 	s.mu.Lock()
-	u := s.ui
+	u, ctx := s.ui, s.ctx
 	s.mu.Unlock()
 	if u != nil {
 		u.SetTooltip(s.tooltip())
-		u.SetMenu(s.menu())
-	}
-}
-
-func (s *session) onMenu(ctx context.Context, id int) {
-	switch id {
-	case menuSend:
-		_ = s.sharer.Share(ctx, false)
-	case menuAuto:
-		on := !s.sharer.Auto()
-		s.sharer.SetAuto(on)
-		if err := saveAuto(on); err != nil {
-			s.printf("could not save clip.auto: %v", err)
-		}
-		s.printf("send every copy: %s", map[bool]string{true: "on", false: "off (only the hotkey sends)"}[on])
-		s.refresh()
-	case menuLog:
-		if s.log != nil {
-			_ = exec.Command("notepad.exe", s.log.path).Start()
-		}
-	case menuQuit:
-		s.printf("quitting from the tray menu.")
-		if s.cancel != nil {
-			s.cancel()
-		}
+		u.SetIcon(s.icon())
+		u.SetMenu(s.menu(ctx))
 	}
 }
 
@@ -302,7 +285,31 @@ var saveAuto = func(on bool) error {
 	return cfg.Save()
 }
 
+// background runs f on a goroutine that close waits for; once close has begun, f does not run.
+func (s *session) background(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return
+	}
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		f()
+	}()
+}
+
+// close ends the session: its context (a child gitsi the menu started is stopped with it), the background work, the desktop and
+// the log.
 func (s *session) close() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.tunnels.closeAll() // their goroutines end with them; close waits for those below
+	s.bg.Wait()
 	s.mu.Lock()
 	u := s.ui
 	s.ui = nil

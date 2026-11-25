@@ -71,6 +71,7 @@ func clone(ctx context.Context, env *module.Env, args []string) error {
 	if err := ensureCheckout(ctx, env, gitx.New(dst), "origin"); err != nil {
 		return err
 	}
+	remember(ctx, gitx.New(dst), dst, "origin")
 	fmt.Fprintf(env.Stdout, "Cloned in %s\n", dst)
 	return nil
 }

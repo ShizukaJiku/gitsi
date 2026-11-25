@@ -10,6 +10,7 @@ consumes. A single Go binary. Before changing something, read what applies:
 | `docs/ARCHITECTURE.md` | packages, layers, patterns, CLI map |
 | `docs/ROADMAP.md` | planned improvements |
 | `docs/WATCH.md` | design of `gitsi watch` |
+| `docs/TRAY.md` | the tray menu of `gitsi watch -tray` |
 
 ## Principles the code cannot break
 - **The edge only consumes**: it listens on nothing outside `127.0.0.1`, never uses `ssh -R` and never acts as a door from the hub

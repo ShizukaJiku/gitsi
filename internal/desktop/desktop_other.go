@@ -11,6 +11,18 @@ func Start(Options) (*Desktop, error) { return nil, ErrUnsupported }
 // SetTooltip does nothing outside Windows.
 func (*Desktop) SetTooltip(string) {}
 
+// SetIcon does nothing outside Windows.
+func (*Desktop) SetIcon(IconState) {}
+
+// Confirm answers no outside Windows.
+func (*Desktop) Confirm(string, string) bool { return false }
+
+// Message does nothing outside Windows.
+func (*Desktop) Message(string, string) {}
+
+// PickFolder reports that there is no folder dialog outside Windows.
+func (*Desktop) PickFolder(string) (string, bool) { return "", false }
+
 // SetMenu does nothing outside Windows.
 func (*Desktop) SetMenu([]MenuItem) {}
 
