@@ -82,6 +82,10 @@ second, which only text, the common case, avoids.
 saves the change counter; a change with that number is not even read. Besides, the text just received and the files left by the
 last item received are not sent back.
 
+**A copy written twice**: some programs write the same copy again a moment later (screenshot tools add formats to the image about
+a second after putting it there), past the 300 ms wait. Auto mode does not send again the content it sent less than 5 s before;
+later it is a new copy and goes, and the hotkey always sends.
+
 **Privacy in auto mode**: password managers mark what they copy with the formats `ExcludeClipboardContentFromMonitorProcessing`,
 `CanIncludeInClipboardHistory = 0` or `CanUploadToCloudClipboard = 0` (the Windows clipboard history convention). Auto mode does
 not send content with any of them. The hotkey is an explicit act and sends it anyway.

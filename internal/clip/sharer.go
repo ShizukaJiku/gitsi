@@ -42,8 +42,14 @@ type Sharer struct {
 	ownSeq  uint32 // change counter right after this process wrote the clipboard
 	haveOwn bool
 	lastIn  Item // last item written to the clipboard
+	lastOut Item // last item sent
 	timer   *time.Timer
 }
+
+// repeatWindow is how long auto mode takes the same content as the copy it already sent. Screenshot tools write the clipboard
+// again about a second after the first time (they add formats to the same image), past the debounce: without it the other machine
+// received each screenshot twice. Later, the same content is a new copy and goes (the other side may have copied something else).
+const repeatWindow = 5 * time.Second
 
 // SetAuto turns auto mode on or off (every copy is sent, not only on the hotkey).
 func (s *Sharer) SetAuto(on bool) {
@@ -116,10 +122,16 @@ func (s *Sharer) Share(ctx context.Context, auto bool) error {
 	if auto && it.Kind == KindText && it.SHA256 == s.last().SHA256 {
 		return nil // the text just received, copied again (e.g. from the clipboard history)
 	}
+	if auto && s.justSent(it) {
+		return nil // the same copy written again by the program that made it
+	}
 	if err := s.Send(ctx, it, data); err != nil {
 		s.fail("could not send "+it.Describe(), err)
 		return err
 	}
+	s.mu.Lock()
+	s.lastOut = it
+	s.mu.Unlock()
 	s.logf("sent %s", it.Describe())
 	s.audit("clip.send", it)
 	return nil
@@ -156,6 +168,13 @@ func (s *Sharer) Receive(ctx context.Context, it Item, data []byte) error {
 	s.logf("received %s from %s: paste it with Ctrl+V", it.Describe(), from)
 	s.audit("clip.receive", it)
 	return nil
+}
+
+// justSent reports whether it has the content of the item sent last, within repeatWindow.
+func (s *Sharer) justSent(it Item) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastOut.SHA256 == it.SHA256 && it.Time.Sub(s.lastOut.Time) < repeatWindow
 }
 
 func (s *Sharer) last() Item {

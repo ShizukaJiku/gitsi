@@ -291,6 +291,40 @@ func TestAutoModeDoesNotEchoWhatItReceived(t *testing.T) {
 	}
 }
 
+// A program that writes the same copy twice, a second apart (a screenshot tool adds formats to the image it just put there), sends
+// it once in auto mode: the other machine received the same image twice. The same copy sent again later, or with the hotkey, goes.
+func TestAutoModeSendsARewrittenCopyOnce(t *testing.T) {
+	fc := &fakeClip{}
+	s, out, _ := newSharer(t, fc)
+	now := time.Now()
+	s.Now = func() time.Time { return now }
+	s.SetAuto(true)
+	shot := clipboard.Content{Kind: clipboard.Image, PNG: []byte("\x89PNG screenshot")}
+	fc.copy(shot)
+	s.Share(context.Background(), true)
+	now = now.Add(time.Second)
+	fc.copy(shot) // the tool writes it again: the counter moves, the content is the same
+	s.Share(context.Background(), true)
+	if len(*out) != 1 {
+		t.Fatalf("the same image a second later is one copy: %d sent", len(*out))
+	}
+	s.Share(context.Background(), false)
+	if len(*out) != 2 {
+		t.Fatal("the hotkey sends it again: it is an explicit act")
+	}
+	now = now.Add(repeatWindow + time.Second)
+	fc.copy(shot)
+	s.Share(context.Background(), true)
+	if len(*out) != 3 {
+		t.Fatal("copied again later, it is sent again (the other machine may have copied something else meanwhile)")
+	}
+	fc.copy(clipboard.Content{Kind: clipboard.Text, Text: "something else"})
+	s.Share(context.Background(), true)
+	if len(*out) != 4 {
+		t.Fatal("a different copy is always sent")
+	}
+}
+
 // The hotkey always sends; auto mode skips what is marked private and what is too large is never sent.
 func TestPrivateAndSizeLimits(t *testing.T) {
 	fc := &fakeClip{}
