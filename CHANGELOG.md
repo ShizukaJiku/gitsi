@@ -3,7 +3,7 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-25
 
 ### Added
 - Shared clipboard between hub and edge (`docs/CLIP.md`): with the new `clip` policy on both machines and `gitsi watch` running on
@@ -98,6 +98,7 @@ First public release.
   completion for PowerShell, global `-v`, `-q` and `--json`, and stable exit codes per error category.
 - Release archives for Windows amd64 and arm64 with SHA256 checksums.
 
+[1.3.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.3.0
 [1.2.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.0.0
