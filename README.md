@@ -300,6 +300,7 @@ also tests `send -clip` (it overwrites your session's clipboard). Contribution r
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) - current design decisions, by topic
 - [`docs/WORKFLOW.md`](docs/WORKFLOW.md) - the edge <-> hub <-> origin workflow
 - [`docs/WATCH.md`](docs/WATCH.md) - design of `gitsi watch` (hub notices and reactions)
+- [`docs/CLIP.md`](docs/CLIP.md) - design of the shared clipboard between hub and edge (planned)
 - [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) - what gitsi does on a managed machine, for security reviewers
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) - planned improvements
 - [`CHANGELOG.md`](CHANGELOG.md) - release notes
