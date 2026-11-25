@@ -3,7 +3,7 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.1] - 2026-11-25
 
 ### Fixed
 - With `clip.auto`, a screenshot (Win+Shift+S, the Snipping Tool) reached the other machine twice: the tool writes the clipboard
