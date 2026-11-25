@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
 	"github.com/ShizukaJiku/gitsi/internal/module"
-	"github.com/ShizukaJiku/gitsi/internal/policy"
 	"github.com/ShizukaJiku/gitsi/internal/version"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
 )
@@ -50,15 +50,11 @@ func (mod) Commands() []module.Command {
 const staleAfter = 90 * time.Second
 
 // HubHandler is used by `serve --stdio` on the hub: it watches THIS hub's state (its layout, never one an edge claims). The
-// clipboard slot is offered only when the hub's own clip policy is on.
+// clipboard is always offered; whether the hub's clip policy allows it is checked live, so turning it on or off applies to the
+// sessions already open.
 func HubHandler(env *module.Env) (hub.Router, []string) {
 	home, _ := os.UserHomeDir()
 	lay := layout.ForHub(env.Config, home)
-	caps := []string{watch.Cap}
-	var slot *clip.Slot
-	if policy.Check(env.Config.Policy, policy.Clip) == nil {
-		slot, caps = hubSlot(env.Config), append(caps, clip.Cap)
-	}
 	return &watch.Handler{
 		Source: &watch.FSSource{
 			BinaryPath: filepath.FromSlash(lay.Binary),
@@ -66,11 +62,34 @@ func HubHandler(env *module.Env) (hub.Router, []string) {
 			JobsDir:    filepath.FromSlash(lay.Jobs),
 			ReposDir:   filepath.FromSlash(lay.Repos),
 		},
-		StateDir:   stateDir(env.Config),
-		HubVersion: version.Version,
-		Clip:       slot,
-		ClipMax:    env.Config.Clip.MaxBytes(),
-	}, caps
+		StateDir:    stateDir(env.Config),
+		HubVersion:  version.Version,
+		Clip:        hubSlot(env.Config),
+		ClipAllowed: livePolicy(env.Config.Policy.AllowClip, time.Now),
+		ClipMax:     env.Config.Clip.MaxBytes(),
+	}, []string{watch.Cap, clip.Cap}
+}
+
+// loadConfig reads the configuration again (a variable in tests).
+var loadConfig = config.Load
+
+// livePolicy reports whether the clip policy is on, reading the configuration again at most once a second: a watch session
+// lasts days and the policy may change meanwhile, while the slot is checked every 100 ms. When the file cannot be read, the last
+// known value stands.
+func livePolicy(initial bool, now func() time.Time) func() bool {
+	var mu sync.Mutex
+	on, checked := initial, now()
+	return func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if t := now(); t.Sub(checked) >= time.Second {
+			checked = t
+			if cfg, err := loadConfig(); err == nil {
+				on = cfg.Policy.AllowClip
+			}
+		}
+		return on
+	}
 }
 
 // hubSlot is the hub's clipboard slot: <hub home>/clip.
@@ -162,8 +181,7 @@ func (s *session) runEdge(ctx context.Context) error {
 			}
 			hubClip.Store(conn.Has(clip.Cap))
 			if s.clipOn && !conn.Has(clip.Cap) && !told.Swap(true) {
-				s.printf("the hub does not share its clipboard: on the hub, gitsi policy set clip on and keep gitsi watch running there " +
-					"(an older hub: gitsi update -publish)")
+				s.printf("the hub's gitsi does not offer the shared clipboard (it is older than 1.3.0): on the hub, gitsi update -publish")
 			}
 			return conn.RW, func() { conn.Close() }, nil
 		},

@@ -3,6 +3,14 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-11-25
+
+### Fixed
+- The shared clipboard did not work for an edge whose `watch` connected before `clip` was enabled on the hub: the hub decided it
+  once per session. The hub now reads its clip policy live, so turning it on or off applies to the sessions already open.
+- A `watch` run with another profile (for example the end-to-end tests) was refused while the user's own `watch` ran: the
+  single-instance lock is now per profile.
+
 ## [1.3.0] - 2026-11-25
 
 ### Added
@@ -98,6 +106,7 @@ First public release.
   completion for PowerShell, global `-v`, `-q` and `--json`, and stable exit codes per error category.
 - Release archives for Windows amd64 and arm64 with SHA256 checksums.
 
+[1.3.1]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.3.1
 [1.3.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.3.0
 [1.2.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ShizukaJiku/gitsi/releases/tag/v1.1.0

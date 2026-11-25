@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,5 +176,39 @@ func TestClipNoticesAreValidated(t *testing.T) {
 	}
 	if (Event{Type: EvClipRefused, ID: clip.NewID(), Detail: strings.Repeat("a", 301)}).Valid() {
 		t.Fatal("an overlong reason must be refused")
+	}
+}
+
+// The hub's clip policy is read live: an edge connected while it was off shares the clipboard as soon as it is turned on,
+// without reconnecting; turned off again, the hub refuses and delivers nothing.
+func TestHubClipPolicyAppliesWithoutReconnecting(t *testing.T) {
+	w, slot, rec := clipWorld(t)
+	var allowed atomic.Bool
+	w.hubH.ClipAllowed = allowed.Load
+	stop := w.run(t)
+	defer stop()
+	data := []byte("before the policy")
+	err := sendWhenLive(t, w.client, newItem(data), data)
+	if err == nil || !strings.Contains(err.Error(), "policy set clip on") {
+		t.Fatalf("with the policy off the hub refuses and says why: %v", err)
+	}
+
+	allowed.Store(true)
+	data = []byte("after the policy")
+	if err := w.client.SendClip(context.Background(), newItem(data), data); err != nil {
+		t.Fatalf("turned on, the same session shares the clipboard: %v", err)
+	}
+	it := newItem([]byte("from the hub"))
+	it.Origin = clip.OriginHub
+	slot.Put(it, []byte("from the hub"))
+	waitFor(t, "the hub's copy", func() bool { return rec.count() == 1 })
+
+	allowed.Store(false)
+	it2 := newItem([]byte("not shared"))
+	it2.Origin = clip.OriginHub
+	slot.Put(it2, []byte("not shared"))
+	time.Sleep(80 * time.Millisecond)
+	if rec.count() != 1 {
+		t.Fatal("turned off, the hub delivers nothing")
 	}
 }

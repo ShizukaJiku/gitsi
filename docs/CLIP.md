@@ -108,7 +108,8 @@ without walking it whole.
 ```
 
 - The `clip` policy (off by default) is required on **each** machine, the hub included: enabling `send` for manual use does not
-  start sending on a hotkey, and the hub only offers its slot (the `clip` capability) when its own policy is on.
+  start sending on a hotkey. The hub reads its own policy live (at most once a second): turning it on or off applies to the
+  sessions already open, without the edges reconnecting; while it is off the hub refuses what edges send and delivers nothing.
 - Each item sent or received leaves a line in `audit.log` (kind, size, sha256, id, origin), never the content.
 - Configuration changes apply when watch restarts, except "Send every copy" in the tray menu, which also saves `clip.auto`.
 
@@ -116,7 +117,8 @@ without walking it whole.
 
 - `watch -tray` starts the same binary detached (no console, its own process group) and releases the terminal. Without `-tray`,
   watch stays in the terminal and the clipboard works the same.
-- One watch per user and machine (a named lock `Local\gitsi-watch`), in the tray or in a terminal: a second one says so and exits.
+- One watch per profile (a named lock `Local\gitsi-watch-<hash of the configuration's path>`), in the tray or in a terminal: a
+  second one says so and exits.
 - The tray menu: state, "Send the clipboard now", "Send every copy", "Open the log", "Quit". The tooltip shows the state and the
   last item. Problems (a hotkey taken, an item too large or refused) also appear as notifications.
 - In the tray, watch's lines go to `%LOCALAPPDATA%\gitsi\watch.log`, which becomes `watch.log.1` past 1 MiB.
@@ -129,7 +131,8 @@ without walking it whole.
 
 ## 8. Protocol
 
-- `clip` capability in the greeting: an older hub or edge simply does not offer it, and watch says what to do.
+- `clip` capability in the greeting: every hub from 1.3.0 on announces it, whatever its policy (which is checked live); an older
+  hub does not, and watch says to update it.
 - The edge asks for the clipboard in its `Watch` request (`clip`, `clip_age_ms`, `clip_seen`, `clip_max`).
 - Frames `KindClip` (the item: id, kind, name, count, size, sha256, origin, time) followed by `KindClipData` (the content, in
   blocks of 1 MiB), in both directions inside the watch session. The receiver checks the SHA256 before storing or writing.

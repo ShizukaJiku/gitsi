@@ -40,10 +40,14 @@ type Handler struct {
 	Ping       time.Duration // how often the heartbeat is sent (30 s)
 	Now        func() time.Time
 
-	// Clip is the hub's clipboard slot; nil when the hub does not share its clipboard (its clip policy is off).
-	Clip     *clip.Slot
-	ClipMax  int64         // the largest item the hub accepts from an edge
-	ClipPoll time.Duration // how often the slot is checked (100 ms, a file date: a copy should arrive almost at once)
+	// Clip is the hub's clipboard slot; nil when this hub cannot share a clipboard at all.
+	Clip *clip.Slot
+	// ClipAllowed reports, at each use, whether the hub's clip policy is on (nil: always). It is checked live, not when the
+	// session opens: an edge that connected before the policy was turned on shares the clipboard as soon as it is, without
+	// reconnecting (a healthy session may last days).
+	ClipAllowed func() bool
+	ClipMax     int64         // the largest item the hub accepts from an edge
+	ClipPoll    time.Duration // how often the slot is checked (100 ms, a file date: a copy should arrive almost at once)
 }
 
 // Handles implements hub.Router.
@@ -121,6 +125,9 @@ func (h *Handler) HandleSession(ctx context.Context, f proto.Frame, r io.Reader,
 	since := h.now().Add(-time.Duration(max(req.ClipAgeMS, 0)) * time.Millisecond)
 	lastClip := req.ClipSeen // the last slot item this session dealt with (delivered, skipped or stored from this edge)
 	checkClip := func() error {
+		if !h.clipAllowed() {
+			return nil
+		}
 		cur, ok := h.Clip.Current(h.now())
 		if !ok || cur.ID == lastClip {
 			return nil
@@ -143,6 +150,9 @@ func (h *Handler) HandleSession(ctx context.Context, f proto.Frame, r io.Reader,
 	store := func(m inbound) error {
 		if m.err != nil {
 			return send(Event{Type: EvClipRefused, ID: m.it.ID, Detail: Printable(m.err.Error(), 280)})
+		}
+		if !h.clipAllowed() {
+			return send(Event{Type: EvClipRefused, ID: m.it.ID, Detail: errClipOff})
 		}
 		m.it.Origin, m.it.Time = edgeID, h.now() // the hub decides both: an edge cannot pose as another or make an item outlive TTL
 		if err := h.Clip.Put(m.it, m.data); err != nil {
@@ -285,6 +295,11 @@ func (h *Handler) HandleSession(ctx context.Context, f proto.Frame, r io.Reader,
 	}
 }
 
+// errClipOff explains a refusal while the hub's clip policy is off.
+const errClipOff = "the hub does not share its clipboard (on the hub: gitsi policy set clip on)"
+
+func (h *Handler) clipAllowed() bool { return h.ClipAllowed == nil || h.ClipAllowed() }
+
 // read receives what the edge sends inside the session. Only clipboard items are expected; anything else is ignored. A refused item
 // is passed on (the edge is told why) and reading goes on: ReadItem already drained its content.
 func (h *Handler) read(ctx context.Context, r io.Reader, clipOn bool, in chan<- inbound) {
@@ -303,7 +318,7 @@ func (h *Handler) read(ctx context.Context, r io.Reader, clipOn bool, in chan<- 
 		} else {
 			m.it, m.data, m.err = clip.ReadItem(f, r, limit)
 			if !clipOn && errors.Is(m.err, clip.ErrRefused) {
-				m.err = fmt.Errorf("%w: the hub does not share its clipboard (on the hub: gitsi policy set clip on)", clip.ErrRefused)
+				m.err = fmt.Errorf("%w: %s", clip.ErrRefused, errClipOff)
 			}
 		}
 		select {

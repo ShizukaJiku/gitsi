@@ -333,3 +333,41 @@ func TestWatchStopsWhenTheWindowCloses(t *testing.T) {
 		t.Fatal("watch must stop with its window")
 	}
 }
+
+// The hub always offers the clipboard and reads its policy again (at most once a second) instead of fixing it per session.
+func TestHubHandlerReadsThePolicyLive(t *testing.T) {
+	env, _ := clipHubEnv(t, false)
+	_, caps := HubHandler(env)
+	if strings.Join(caps, ",") != "watch,clip" {
+		t.Fatalf("the clipboard is always offered (the policy is checked live): %v", caps)
+	}
+	on := false
+	old := loadConfig
+	loadConfig = func() (*config.Config, error) { c := config.Default(); c.Policy.AllowClip = on; return c, nil }
+	defer func() { loadConfig = old }()
+	now := time.Now()
+	allowed := livePolicy(false, func() time.Time { return now })
+	on = true
+	if allowed() {
+		t.Fatal("within a second the last value stands")
+	}
+	now = now.Add(time.Second)
+	if !allowed() {
+		t.Fatal("after a second the policy is read again")
+	}
+	loadConfig = func() (*config.Config, error) { return nil, errors.New("being replaced") }
+	now = now.Add(time.Second)
+	if !allowed() {
+		t.Fatal("an unreadable file keeps the last known value")
+	}
+}
+
+// The lock belongs to the profile: another profile (the end-to-end tests) is not blocked by the user's real watch.
+func TestLockNameDependsOnTheProfile(t *testing.T) {
+	a := lockName()
+	t.Setenv("USERPROFILE", t.TempDir())
+	t.Setenv("HOME", os.Getenv("USERPROFILE"))
+	if b := lockName(); a == b || !strings.HasPrefix(b, "gitsi-watch-") {
+		t.Fatalf("%q %q", a, b)
+	}
+}

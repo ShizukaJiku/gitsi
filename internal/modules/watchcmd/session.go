@@ -2,6 +2,8 @@ package watchcmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -23,8 +25,14 @@ import (
 // childEnv marks the process 'watch -tray' starts detached: it is the one that stays in the tray.
 const childEnv = "GITSI_WATCH_TRAY"
 
-// lockName names the per-user lock: one watch per machine and user, in the tray or in a terminal.
-const lockName = "gitsi-watch"
+// lockName names the lock: one watch per profile, in the tray or in a terminal. It includes the configuration's path, which is
+// what two instances would fight over (state, log, clipboard): a user's real watch and one run with another profile (the
+// end-to-end tests) do not block each other.
+func lockName() string {
+	p, _ := config.Path()
+	sum := sha256.Sum256([]byte(strings.ToLower(p)))
+	return "gitsi-watch-" + hex.EncodeToString(sum[:8])
+}
 
 // Tray menu entries.
 const (
@@ -59,7 +67,7 @@ var (
 	writeClip clipboard.Writer = clipboard.Write
 	clipSeq                    = desktop.Seq
 	clipPriv                   = desktop.Private
-	lock                       = func() (func(), error) { return desktop.Lock(lockName) }
+	lock                       = func() (func(), error) { return desktop.Lock(lockName()) }
 )
 
 // session is one run of watch: its output (a terminal or the log file), its clipboard sharing and its tray.
