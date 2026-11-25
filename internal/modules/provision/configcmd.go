@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/desktop"
 	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
@@ -108,6 +109,29 @@ func settings() []setting {
 			func(c *config.Config, v string) error { return setOnOff(&c.Watch.Report, v) }, false, false},
 		{"watch.auto_fetch", "(edge) watch fetches (git fetch) its folder's repo when it changes on the hub: on | off", func(c *config.Config) string { return onOff(c.Watch.AutoFetch) },
 			func(c *config.Config, v string) error { return setOnOff(&c.Watch.AutoFetch, v) }, false, false},
+		{"clip.hotkey", "hotkey that sends what is copied to the other machine (e.g. ctrl+shift+alt+c)", func(c *config.Config) string { return c.Clip.HotkeyOrDefault() },
+			func(c *config.Config, v string) error {
+				if _, _, err := desktop.ParseHotkey(v); err != nil {
+					return err
+				}
+				c.Clip.Hotkey = strings.ToLower(strings.ReplaceAll(v, " ", ""))
+				if c.Clip.Hotkey == config.DefaultClipHotkey {
+					c.Clip.Hotkey = ""
+				}
+				return nil
+			}, false, false},
+		{"clip.auto", "send every copy to the other machine, not only on the hotkey: on | off", func(c *config.Config) string { return onOff(c.Clip.Auto) },
+			func(c *config.Config, v string) error { return setOnOff(&c.Clip.Auto, v) }, false, false},
+		{"clip.max_size_mb", fmt.Sprintf("largest clipboard item sent or accepted, in MB (1-%d)", config.MaxClipSizeMB),
+			func(c *config.Config) string { return strconv.FormatInt(c.Clip.MaxBytes()>>20, 10) },
+			func(c *config.Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil || n < 1 || n > config.MaxClipSizeMB {
+					return fmt.Errorf("clip.max_size_mb: give a number of MB from 1 to %d: %q", config.MaxClipSizeMB, v)
+				}
+				c.Clip.MaxSizeMB = n
+				return nil
+			}, false, false},
 		{"remote_name", "name of the bridge remote in your repos", func(c *config.Config) string { return c.RemoteName },
 			func(c *config.Config, v string) error {
 				if err := safe.Name("remote_name", v); err != nil {

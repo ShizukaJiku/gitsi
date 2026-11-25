@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -13,14 +13,11 @@ func flags(cmd *exec.Cmd) uint32 {
 	if cmd.SysProcAttr == nil {
 		return 0
 	}
-	return creationFlags(cmd)
+	return cmd.SysProcAttr.CreationFlags
 }
 
 // A captured child (buffers, nothing as input) gets no window; one that shares the console (live output) keeps it.
 func TestBackgroundHidesOnlyWhenNoConsoleIsShared(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("console windows exist only on Windows")
-	}
 	var out bytes.Buffer
 	c := exec.Command("cmd.exe", "/c", "echo", "hi")
 	c.Stdout = &out
@@ -47,13 +44,18 @@ func TestBackgroundHidesOnlyWhenNoConsoleIsShared(t *testing.T) {
 
 // Flags the caller already set are kept.
 func TestBackgroundKeepsExistingAttributes(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("console windows exist only on Windows")
-	}
 	c := exec.Command("cmd.exe")
-	setFlags(c, 0x00000200) // CREATE_NEW_PROCESS_GROUP
+	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000200} // CREATE_NEW_PROCESS_GROUP
 	Background(c)
 	if flags(c) != 0x00000200|Flags {
+		t.Fatalf("flags = %#x", flags(c))
+	}
+}
+
+// Detached keeps the child out of this console and its Ctrl+C.
+func TestDetached(t *testing.T) {
+	c := Detached(exec.Command("cmd.exe"))
+	if flags(c) != detachedProcess|createNewProcessGroup || !c.SysProcAttr.HideWindow {
 		t.Fatalf("flags = %#x", flags(c))
 	}
 }

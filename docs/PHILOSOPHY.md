@@ -24,14 +24,17 @@ and does not configure it. Nobody has to set or remember the other machine's pat
 require touching any edge.
 
 ### 4. Explicit opt-in, least privilege by default
-Whatever moves content or runs something (mailbox, services, remote execution) comes **disabled**. It is enabled with a conscious
+Whatever moves content or runs something (mailbox, services, remote execution, shared clipboard) comes **disabled**. It is enabled with a conscious
 act (`gitsi policy set <feature> on`, which explains what it enables) and leaves a local record (`~/.gitsi/audit.log`). Git,
 diagnostics and configuration need nothing enabled.
 
 ### 5. Standard, transparent pieces
-gitsi uses what the system already has (`ssh`, `git`, `scp`, `powershell`): no resident agents, no daemons on the edge, no native
-dependencies. Users can see and reproduce by hand everything gitsi does. Nothing runs in the background on the edge: tunnels
-live in the foreground and close with Ctrl+C.
+gitsi uses what the system already has (`ssh`, `git`, `scp`, `powershell`, the Windows API): no resident agents, no daemons on
+the edge, no native dependencies. Users can see and reproduce by hand everything gitsi does.
+
+**Nothing hidden or unattended on the edge.** Whatever runs for long is started by hand, stays visible (a terminal or a tray icon)
+and quits from there: tunnels and `watch` close with Ctrl+C, or from the tray icon's menu. Nothing starts on its own: no services,
+scheduled tasks or logon entries.
 
 ### 6. Content-agnostic
 gitsi neither inspects nor judges what is shared; that is the sharer's responsibility. It guarantees **integrity** (end-to-end

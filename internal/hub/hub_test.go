@@ -142,3 +142,47 @@ func TestHelloCarriesInfo(t *testing.T) {
 	c.Close()
 	wait(t, done)
 }
+
+// sessionRouter takes the session over for KindWatch and echoes back what the edge sends inside it.
+type sessionRouter struct{}
+
+func (sessionRouter) Handles(k proto.Kind) bool   { return k == proto.KindWatch || k == proto.KindList }
+func (sessionRouter) TakesOver(k proto.Kind) bool { return k == proto.KindWatch }
+func (sessionRouter) Handle(_ context.Context, f proto.Frame, w io.Writer) error {
+	return proto.WriteFrame(w, proto.Frame{Kind: proto.KindOK, Payload: []byte("plain")})
+}
+func (sessionRouter) HandleSession(_ context.Context, f proto.Frame, r io.Reader, w io.Writer) error {
+	for {
+		g, err := proto.ReadFrame(r)
+		if err != nil {
+			return nil
+		}
+		if err := proto.WriteFrame(w, proto.Frame{Kind: proto.KindOK, Payload: g.Payload}); err != nil {
+			return err
+		}
+	}
+}
+
+// A session handler reads the edge's frames itself (Serve does not compete for them) and the session ends with it; other kinds
+// behind the same Mux are still served one frame at a time.
+func TestSessionHandlerOwnsTheRestOfTheSession(t *testing.T) {
+	c, done := pair(t, Config{Handler: Mux{sessionRouter{}}})
+	if _, err := proto.ClientHandshake(c, "edge"); err != nil {
+		t.Fatal(err)
+	}
+	go proto.WriteFrame(c, proto.Frame{Kind: proto.KindList})
+	if f, err := proto.Expect(c, proto.KindOK); err != nil || string(f.Payload) != "plain" {
+		t.Fatalf("%+v %v", f, err)
+	}
+	go func() {
+		proto.WriteFrame(c, proto.Frame{Kind: proto.KindWatch})
+		proto.WriteFrame(c, proto.Frame{Kind: proto.KindList, Payload: []byte("inside")})
+	}()
+	if f, err := proto.Expect(c, proto.KindOK); err != nil || string(f.Payload) != "inside" {
+		t.Fatalf("the session handler must receive the frames that follow: %+v %v", f, err)
+	}
+	c.Close()
+	if err := wait(t, done); err != nil {
+		t.Fatalf("%v", err)
+	}
+}

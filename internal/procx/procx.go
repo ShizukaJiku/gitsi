@@ -29,3 +29,10 @@ func isConsole(f *os.File) bool {
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
+
+// Detached prepares cmd to keep running on its own after this process and its terminal end (the tray): no console, and its own
+// process group, so a Ctrl+C in the terminal that started it does not reach it.
+func Detached(cmd *exec.Cmd) *exec.Cmd {
+	detach(cmd)
+	return cmd
+}

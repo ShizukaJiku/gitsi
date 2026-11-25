@@ -30,7 +30,11 @@ func (mod) Commands() []module.Command {
 			case 0:
 				return []string{"set"}
 			case 1:
-				return []string{string(policy.Send), string(policy.Take), string(policy.Services), string(policy.Exec)}
+				var out []string
+				for _, f := range policy.All {
+					out = append(out, string(f))
+				}
+				return out
 			case 2:
 				return []string{"on", "off"}
 			}
@@ -49,7 +53,7 @@ func onOff(b bool) string {
 func run(_ context.Context, env *module.Env, args []string) error {
 	p := &env.Config.Policy
 	if len(args) == 0 {
-		for _, f := range []policy.Feature{policy.Send, policy.Take, policy.Services, policy.Exec} {
+		for _, f := range policy.All {
 			v, _ := policy.Field(p, f)
 			fmt.Fprintf(env.Stdout, "%-10s %s\n", f, onOff(*v))
 		}
@@ -57,7 +61,7 @@ func run(_ context.Context, env *module.Env, args []string) error {
 		return nil
 	}
 	if args[0] != "set" || len(args) < 3 {
-		return errors.New("usage: gitsi policy set <send|take|services|exec> <on|off> [-yes]")
+		return errors.New("usage: gitsi policy set <send|take|services|exec|clip> <on|off> [-yes]")
 	}
 	v, err := policy.Field(p, policy.Feature(args[1]))
 	if err != nil {

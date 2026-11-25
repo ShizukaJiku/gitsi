@@ -17,7 +17,7 @@ edge is listening and with which version.
 |---|---|
 | The edge starts every connection | `gitsi watch` opens the SSH session from the edge, like any other command. The hub never connects to the edge. |
 | The hub never makes the edge run anything arbitrary | What travels are **notices** with typed data (a known kind and its fields), never commands. The edge decides what to do with each kind, and can only take fixed actions built into gitsi. An unknown kind is ignored. |
-| Nothing in the background on the edge | `watch` runs in the foreground in a terminal, like `svc up`, and closes with Ctrl+C. It is not a service or a scheduled task. |
+| Nothing hidden or unattended on the edge | `watch` runs in a terminal, like `svc up`, and closes with Ctrl+C, or in the tray (`watch -tray`) and quits from its menu. It is started by hand: not a service, a scheduled task or a logon entry. |
 | Explicit opt-in | Listening to notices moves no content. Each automatic reaction (pull from the outbox, update, report to the hub) is enabled separately and still requires the existing policy (`take`, `send`). |
 | Record | Connections, notices and actions are written to `audit.log`. |
 
@@ -42,7 +42,7 @@ gitsi watch -- ssh -- gitsi serve --stdio  -------->  watch session (one process
 3. The hub's process compares that state with the real one and sends a notice for each difference. Then it keeps checking every
    2 s and reports each change. **No event log is needed on the hub**: since the edge says what it knows, a reconnection never
    loses anything nor repeats what was already seen.
-4. The hub sends a heartbeat every 30 s; the edge only listens. When the edge goes 75 s without receiving anything (network down,
+4. The hub sends a heartbeat every 30 s; the edge sends nothing but clipboard items (`CLIP.md`). When the edge goes 75 s without receiving anything (network down,
    hub off), it closes the session and retries with growing waits (5 s, 10 s, 30 s, 1 min, up to 5 min), showing the state in the
    terminal.
 
@@ -104,7 +104,8 @@ When the last heartbeat is older than 90 s, the edge shows as disconnected (the 
   hub's heartbeat). The hub notices the edge left because writing the heartbeat fails.
 - First connection (the edge has no saved state yet): the hub sends a `baseline` notice with what already exists (outbox, finished
   jobs, branches) and the edge saves it without showing it; that way weeks-old jobs do not appear as new.
-- A watch session does not mix other operations (send/take open their own session).
+- Besides the shared clipboard's items (`KindClip`, `CLIP.md`), a watch session does not mix other operations (send/take open
+  their own session).
 - Cost on the hub: every 2 s, the published binary's size and date (the hash only when they change), an outbox listing, the jobs'
   `exit` files and the bridge repos' refs. Negligible.
 
@@ -120,4 +121,5 @@ When the last heartbeat is older than 90 s, the edge shows as disconnected (the 
 1. **`auto_update`**: off by default (notify only) until enabled by hand.
 2. **Reports**: one hub inbox item per reaction.
 3. **Desktop notifications**: not yet (see `ROADMAP.md`).
-4. **Start**: by hand, like `svc up`; never on login (that would be a background process).
+4. **Start**: by hand, in a terminal or in the tray (`watch -tray`); never on logon on the edge. The hub may start its own
+   `watch -tray` on logon to share its clipboard (`CLIP.md`).

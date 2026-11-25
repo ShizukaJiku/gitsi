@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/clip"
 	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"github.com/ShizukaJiku/gitsi/internal/proto"
 )
@@ -47,6 +50,64 @@ type Client struct {
 	// React runs the automatic reactions (new version, outbox item, changed branch) after showing the notice. It returns true when
 	// watch must restart. nil: notify only. A new version is tried only once, even if it fails.
 	React func(ctx context.Context, e Event) (restart bool)
+
+	// Quit is how the user stops watch, shown when it connects ("Ctrl+C to quit." when empty).
+	Quit string
+	// State is told when a session starts listening (true) and when it ends (false): the tray shows it. Optional.
+	State func(connected bool)
+
+	// The shared clipboard (docs/CLIP.md). Clip says, before each session, whether to ask for it (the policy is on and the hub
+	// offers it); nil: never. OnClip receives each item the hub delivers. ClipMax is the largest item accepted.
+	Clip    func() bool
+	OnClip  func(ctx context.Context, it clip.Item, data []byte)
+	ClipMax int64
+
+	once     sync.Once
+	started  time.Time
+	out      chan clipSend
+	clipLive atomic.Bool // a session that carries the clipboard is open
+	clipSeen string      // the last item received (only the session goroutine touches it)
+}
+
+// clipSend is a clipboard item waiting to go out in the open session, and where to say how it went.
+type clipSend struct {
+	it   clip.Item
+	data []byte
+	done chan error
+}
+
+// ErrNoClip is returned by SendClip when no session that carries the clipboard is open.
+var ErrNoClip = errors.New("not connected to a hub that shares its clipboard (watch keeps retrying)")
+
+func (c *Client) init() {
+	c.once.Do(func() {
+		c.started = c.now()
+		c.out = make(chan clipSend)
+	})
+}
+
+// SendClip sends a clipboard item in the open session and waits until the hub confirms it stored it (or says why not).
+func (c *Client) SendClip(ctx context.Context, it clip.Item, data []byte) error {
+	c.init()
+	if !c.clipLive.Load() {
+		return ErrNoClip
+	}
+	req := clipSend{it: it, data: data, done: make(chan error, 1)}
+	select {
+	case c.out <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second): // the session ended in the meantime, or is stuck
+		return ErrNoClip
+	}
+	select {
+	case err := <-req.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(2 * time.Minute):
+		return errors.New("the hub did not confirm the clipboard item")
+	}
 }
 
 func (c *Client) now() time.Time {
@@ -68,6 +129,7 @@ func (c *Client) audit(action, detail string) {
 
 // Run listens until the context is cancelled (Ctrl+C). It returns an error only when retrying makes no sense.
 func (c *Client) Run(ctx context.Context) error {
+	c.init()
 	backoff := c.Backoff
 	if len(backoff) == 0 {
 		backoff = []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute}
@@ -109,6 +171,10 @@ func (c *Client) Run(ctx context.Context) error {
 type frameOrErr struct {
 	f   proto.Frame
 	err error
+	// a clipboard item (f is its header), already read and verified; clipErr says why it was refused
+	it      clip.Item
+	data    []byte
+	clipErr error
 }
 
 func (c *Client) session(ctx context.Context) error {
@@ -121,16 +187,47 @@ func (c *Client) session(ctx context.Context) error {
 	st, first := c.load()
 	req := c.Identity
 	req.Announced, req.Outbox, req.Jobs, req.Heads, req.First = st.Announced, st.Outbox, st.Jobs, st.Heads, first
+	if c.Clip != nil && c.Clip() {
+		req.Clip, req.ClipAgeMS, req.ClipSeen, req.ClipMax = true, c.now().Sub(c.started).Milliseconds(), c.clipSeen, c.ClipMax
+	}
 	if err := proto.WriteJSON(rw, proto.KindWatch, req); err != nil {
 		return err
 	}
+	pending := map[string]chan error{} // items sent, waiting for the hub's answer
+	defer func() {
+		c.clipLive.Store(false)
+		for _, done := range pending {
+			done <- errors.New("the session with the hub ended before it confirmed the item")
+		}
+		if c.State != nil {
+			c.State(false)
+		}
+	}()
+	c.clipLive.Store(req.Clip)
+	var out chan clipSend
+	if req.Clip {
+		out = c.out
+	}
 
 	frames := make(chan frameOrErr, 1)
+	gone := make(chan struct{}) // this session is over: the reader must not wait for anyone to take its frame
+	defer close(gone)
 	go func() {
 		for {
 			f, err := proto.ReadFrame(rw)
-			frames <- frameOrErr{f, err}
-			if err != nil {
+			fe := frameOrErr{f: f, err: err}
+			if err == nil && f.Kind == proto.KindClip {
+				fe.it, fe.data, fe.clipErr = clip.ReadItem(f, rw, c.ClipMax)
+				if fe.clipErr != nil && !errors.Is(fe.clipErr, clip.ErrRefused) {
+					fe.err = fe.clipErr // the channel broke halfway through the item
+				}
+			}
+			select {
+			case frames <- fe:
+			case <-gone:
+				return
+			}
+			if fe.err != nil {
 				return
 			}
 		}
@@ -147,6 +244,12 @@ func (c *Client) session(ctx context.Context) error {
 			return ctx.Err()
 		case <-timer.C:
 			return fmt.Errorf("no news from the hub in %s", dead)
+		case req := <-out:
+			if err := clip.WriteItem(rw, req.it, req.data); err != nil {
+				req.done <- err
+				return err
+			}
+			pending[req.it.ID] = req.done
 		case fe := <-frames:
 			if fe.err != nil {
 				if errors.Is(fe.err, io.EOF) {
@@ -160,10 +263,27 @@ func (c *Client) session(ctx context.Context) error {
 			timer.Reset(dead)
 			switch fe.f.Kind {
 			case proto.KindPing:
+			case proto.KindClip:
+				if fe.clipErr != nil {
+					c.printf("a clipboard item from the hub was refused: %v", fe.clipErr)
+					continue
+				}
+				c.clipSeen = fe.it.ID
+				if c.OnClip != nil {
+					c.OnClip(ctx, fe.it, fe.data)
+				}
 			case proto.KindEvent:
 				var e Event
 				if json.Unmarshal(fe.f.Payload, &e) != nil || !e.Valid() {
 					continue // unknown type or odd fields: ignored
+				}
+				switch e.Type {
+				case EvClipStored, EvClipRefused:
+					c.clipAnswer(e, pending)
+					continue
+				}
+				if e.Type == EvHello && c.State != nil {
+					c.State(true)
 				}
 				if c.handle(ctx, e, &st) {
 					return ErrRestart
@@ -175,11 +295,33 @@ func (c *Client) session(ctx context.Context) error {
 	}
 }
 
+// clipAnswer passes the hub's answer about a clipboard item to whoever sent it. A refusal of an item this edge did not send is the
+// hub explaining why it did not deliver its own copy.
+func (c *Client) clipAnswer(e Event, pending map[string]chan error) {
+	done, ok := pending[e.ID]
+	if !ok {
+		if e.Type == EvClipRefused {
+			c.printf("the hub's clipboard was not delivered: %s", Printable(e.Detail, 200))
+		}
+		return
+	}
+	delete(pending, e.ID)
+	if e.Type == EvClipStored {
+		done <- nil
+		return
+	}
+	done <- errors.New(Printable(e.Detail, 200))
+}
+
 // handle shows the notice, saves the state and runs its reaction if any. It returns true when watch must restart.
 func (c *Client) handle(ctx context.Context, e Event, st *state) bool {
 	switch e.Type {
 	case EvHello:
-		c.printf("listening to the hub (gitsi %s). Ctrl+C to quit.", Printable(e.Version, 80))
+		quit := c.Quit
+		if quit == "" {
+			quit = "Ctrl+C to quit."
+		}
+		c.printf("listening to the hub (gitsi %s). %s", Printable(e.Version, 80), quit)
 		c.audit("watch.connect", e.Version)
 		return false
 	case EvBaseline:

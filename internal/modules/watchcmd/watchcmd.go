@@ -1,5 +1,7 @@
-// Package watchcmd exposes the hub's notices (docs/WATCH.md): `gitsi watch` on the edge (listens in the foreground) and
-// `gitsi edges` on the hub (who listens). The logic lives in internal/watch; this only wires it to ssh, the config and the CLI.
+// Package watchcmd exposes the hub's notices (docs/WATCH.md) and the shared clipboard (docs/CLIP.md): `gitsi watch` on the edge
+// (listens to the hub and shares the clipboard, in a terminal or in the tray), `gitsi watch` on the hub (shares its clipboard) and
+// `gitsi edges` on the hub (who listens). The logic lives in internal/watch, internal/clip and internal/desktop; this only wires
+// them to ssh, the config and the CLI.
 package watchcmd
 
 import (
@@ -11,9 +13,12 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/clip"
 	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/desktop"
 	"github.com/ShizukaJiku/gitsi/internal/fault"
 	"github.com/ShizukaJiku/gitsi/internal/hub"
 	"github.com/ShizukaJiku/gitsi/internal/hubclient"
@@ -35,7 +40,8 @@ func (mod) Name() string { return "watch" }
 
 func (mod) Commands() []module.Command {
 	return []module.Command{
-		{Name: "watch", Summary: "Listen to the hub's notices in the foreground (Ctrl+C quits)", Roles: module.Edge, NeedsHub: true, Run: watchCmd},
+		{Name: "watch", Summary: "Hub notices and the shared clipboard, in a terminal or the tray", Roles: module.Both, NeedsHub: true,
+			Run: watchCmd, Flags: []string{"-autostart", "-tray"}},
 		{Name: "edges", Summary: "(hub) Edges listening with 'gitsi watch'", Roles: module.Hub, Run: edgesCmd},
 	}
 }
@@ -43,10 +49,16 @@ func (mod) Commands() []module.Command {
 // staleAfter: an edge without a heartbeat for longer than this shows as disconnected (the hub beats every 30 s).
 const staleAfter = 90 * time.Second
 
-// HubHandler is used by `serve --stdio` on the hub: it watches THIS hub's state (its layout, never one an edge claims).
+// HubHandler is used by `serve --stdio` on the hub: it watches THIS hub's state (its layout, never one an edge claims). The
+// clipboard slot is offered only when the hub's own clip policy is on.
 func HubHandler(env *module.Env) (hub.Router, []string) {
 	home, _ := os.UserHomeDir()
 	lay := layout.ForHub(env.Config, home)
+	caps := []string{watch.Cap}
+	var slot *clip.Slot
+	if policy.Check(env.Config.Policy, policy.Clip) == nil {
+		slot, caps = hubSlot(env.Config), append(caps, clip.Cap)
+	}
 	return &watch.Handler{
 		Source: &watch.FSSource{
 			BinaryPath: filepath.FromSlash(lay.Binary),
@@ -56,7 +68,15 @@ func HubHandler(env *module.Env) (hub.Router, []string) {
 		},
 		StateDir:   stateDir(env.Config),
 		HubVersion: version.Version,
-	}, []string{watch.Cap}
+		Clip:       slot,
+		ClipMax:    env.Config.Clip.MaxBytes(),
+	}, caps
+}
+
+// hubSlot is the hub's clipboard slot: <hub home>/clip.
+func hubSlot(cfg *config.Config) *clip.Slot {
+	home, _ := os.UserHomeDir()
+	return &clip.Slot{Dir: filepath.FromSlash(path.Join(layout.ForHub(cfg, home).Home, "clip"))}
 }
 
 func stateDir(cfg *config.Config) string {
@@ -68,9 +88,56 @@ func stateDir(cfg *config.Config) string {
 var errNoWatch = fault.New(fault.HubBinary, "the hub's gitsi does not offer watch", "on the hub: gitsi update -publish (with the current version)")
 
 func watchCmd(ctx context.Context, env *module.Env, args []string) error {
-	if len(args) > 0 {
-		return errors.New("usage: gitsi watch")
+	fs := module.NewFlagSet("watch", env.Stderr)
+	tray := fs.Bool("tray", false, "run in the tray: the terminal is released and watch is quit from the icon's menu")
+	autostart := fs.String("autostart", "", "(hub) start 'gitsi watch -tray' when you log on: on | off")
+	rest, err := module.ParseInterleaved(fs, args)
+	if err != nil {
+		return err
 	}
+	if len(rest) > 0 {
+		return errors.New("usage: gitsi watch [-tray]   (on the hub also: gitsi watch -autostart on|off)")
+	}
+	if *autostart != "" {
+		return autostartCmd(env, *autostart)
+	}
+	if *tray && os.Getenv(childEnv) != "1" {
+		return detach(env)
+	}
+	release, err := lock()
+	if errors.Is(err, desktop.ErrRunning) {
+		return errors.New("watch is already running on this machine (in the tray or in another terminal): quit it first")
+	} else if err != nil {
+		return err
+	}
+	defer func() { release() }()
+	s, err := newSession(env, *tray)
+	if err != nil {
+		return err
+	}
+	defer s.close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	s.cancel = cancel
+	if env.Config.Role == config.RoleHub {
+		err = s.runHub(ctx)
+	} else {
+		err = s.runEdge(ctx)
+	}
+	if errors.Is(err, watch.ErrRestart) {
+		s.close()
+		release() // the new binary takes the lock
+		return restartSelf(env, *tray)
+	}
+	if err != nil {
+		s.printf("watch stopped: %v", err)
+	}
+	return err
+}
+
+// runEdge listens to the hub's notices and, when enabled, shares the clipboard inside the same session.
+func (s *session) runEdge(ctx context.Context) error {
+	env := s.env
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -79,11 +146,13 @@ func watchCmd(ctx context.Context, env *module.Env, args []string) error {
 	sum, _ := install.FileSHA256(self)
 	id := identity(sum)
 	r := &reactor{cfg: env.Config.Watch, self: execSelf, fetch: fetchHere(env.Config.RemoteName, env.Config.Hub.HostAlias()),
-		out: env.Stdout, edge: id.User + "@" + id.Edge, now: time.Now}
+		out: s.out, edge: id.User + "@" + id.Edge, now: time.Now}
 	id.Reactions = r.names()
+	var hubClip atomic.Bool // the hub of the current session shares its clipboard
+	var told atomic.Bool    // the user was already told it does not
 	c := &watch.Client{
 		Dial: func(ctx context.Context) (io.ReadWriter, func(), error) {
-			conn, err := hubclient.Dial(ctx, env.Transport, watch.Cap)
+			conn, err := hubclient.Dial(ctx, env.Transport, watch.Cap, clip.Cap)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -91,20 +160,32 @@ func watchCmd(ctx context.Context, env *module.Env, args []string) error {
 				conn.Close()
 				return nil, nil, errNoWatch
 			}
+			hubClip.Store(conn.Has(clip.Cap))
+			if s.clipOn && !conn.Has(clip.Cap) && !told.Swap(true) {
+				s.printf("the hub does not share its clipboard: on the hub, gitsi policy set clip on and keep gitsi watch running there " +
+					"(an older hub: gitsi update -publish)")
+			}
 			return conn.RW, func() { conn.Close() }, nil
 		},
 		Fatal:     fatal,
 		Identity:  id,
 		React:     r.react,
 		StatePath: filepath.Join(home, ".gitsi", "watch-state.json"),
-		Out:       env.Stdout,
-		Audit:     func(action, detail string) { _ = policy.Audit(env.Config.Policy, action, detail) },
+		Out:       s.out,
+		Audit:     s.audit,
+		Quit:      s.quitHint(),
+		State:     s.setConnected,
 	}
-	if err := c.Run(ctx); errors.Is(err, watch.ErrRestart) {
-		return restartSelf(env) // the new version keeps listening in this same terminal
-	} else {
+	if s.clipOn {
+		c.Clip = func() bool { return hubClip.Load() }
+		c.ClipMax = env.Config.Clip.MaxBytes()
+		c.OnClip = func(ctx context.Context, it clip.Item, data []byte) { _ = s.sharer.Receive(ctx, it, data) }
+		s.sharer.Send = c.SendClip
+	}
+	if err := s.startUI(ctx); err != nil {
 		return err
 	}
+	return c.Run(ctx)
 }
 
 // fatal: errors that retrying does not fix (configuration, key, host key, hub's gitsi without watch). The network and a powered-off hub do get fixed.

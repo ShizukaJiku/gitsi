@@ -21,11 +21,15 @@ const (
 	Take     Feature = "take"
 	Services Feature = "services"
 	Exec     Feature = "exec"
+	Clip     Feature = "clip"
 )
+
+// All lists the optional features, in the order they are shown.
+var All = []Feature{Send, Take, Services, Exec, Clip}
 
 // Check returns an error when the feature is not enabled in the configuration.
 func Check(p config.Policy, f Feature) error {
-	ok := map[Feature]bool{Send: p.AllowSend, Take: p.AllowTake, Services: p.AllowServices, Exec: p.AllowExec}[f]
+	ok := map[Feature]bool{Send: p.AllowSend, Take: p.AllowTake, Services: p.AllowServices, Exec: p.AllowExec, Clip: p.AllowClip}[f]
 	if !ok {
 		return fault.New(fault.FeatureOff, fmt.Sprintf("the %q feature is disabled: it is optional and must be enabled explicitly", f),
 			"gitsi policy set "+string(f)+" on")
@@ -90,8 +94,10 @@ func Field(p *config.Policy, f Feature) (*bool, error) {
 		return &p.AllowServices, nil
 	case Exec:
 		return &p.AllowExec, nil
+	case Clip:
+		return &p.AllowClip, nil
 	}
-	return nil, fmt.Errorf("unknown feature %q (send, take, services, exec)", f)
+	return nil, fmt.Errorf("unknown feature %q (send, take, services, exec, clip)", f)
 }
 
 // Effects describes, in one line, what each optional feature enables: confirming is a conscious act, not a formality.
@@ -100,6 +106,8 @@ var Effects = map[Feature]string{
 	Take:     "lets this machine receive what the hub leaves in its outbox.",
 	Services: "lets this machine open local tunnels (127.0.0.1) to the hub's services.",
 	Exec:     "lets this machine run commands on the hub and start background jobs.",
+	Clip: "lets 'gitsi watch' share this machine's clipboard with the other one: a hotkey (or every copy, with clip.auto) sends " +
+		"what is copied, and what the other machine sends is put on the clipboard.",
 }
 
 // Set turns a feature on or off, saves the configuration and records it in the audit log.

@@ -80,6 +80,7 @@ type Policy struct {
 	AllowTake     bool `json:"allow_take"`
 	AllowServices bool `json:"allow_services"`
 	AllowExec     bool `json:"allow_exec"`
+	AllowClip     bool `json:"allow_clip"`
 	Audit         bool `json:"audit"`
 }
 
@@ -101,6 +102,7 @@ type Config struct {
 	Services   []Service `json:"services,omitempty"`
 	Policy     Policy    `json:"policy"`
 	Watch      Watch     `json:"watch"`
+	Clip       Clip      `json:"clip"`
 }
 
 // Watch holds the automatic reactions of 'gitsi watch' on the edge (all off by default; docs/WATCH.md).
@@ -109,6 +111,38 @@ type Watch struct {
 	AutoTake   string `json:"auto_take,omitempty"`   // folder to receive whatever arrives in the outbox ("" = no)
 	Report     bool   `json:"report,omitempty"`      // leave each reaction's result in the hub's inbox
 	AutoFetch  bool   `json:"auto_fetch,omitempty"`  // git fetch the repo of watch's folder when it changes on the bridge
+}
+
+// Clip tunes the clipboard shared between hub and edge while watch runs (docs/CLIP.md). It also needs the clip policy.
+type Clip struct {
+	Hotkey    string `json:"hotkey,omitempty"`      // sends what is copied; "" = DefaultClipHotkey
+	Auto      bool   `json:"auto,omitempty"`        // send every copy on its own, not only on the hotkey
+	MaxSizeMB int    `json:"max_size_mb,omitempty"` // largest item sent or accepted; 0 = DefaultClipMaxSizeMB
+}
+
+// Clip defaults and limits.
+const (
+	DefaultClipHotkey    = "ctrl+shift+alt+c"
+	DefaultClipMaxSizeMB = 20
+	// MaxClipSizeMB caps clip.max_size_mb: an item is held in memory while it travels.
+	MaxClipSizeMB = 256
+)
+
+// HotkeyOrDefault returns the configured hotkey or the default one.
+func (c Clip) HotkeyOrDefault() string {
+	if c.Hotkey == "" {
+		return DefaultClipHotkey
+	}
+	return c.Hotkey
+}
+
+// MaxBytes returns the size limit in bytes (the default when unset, never above MaxClipSizeMB).
+func (c Clip) MaxBytes() int64 {
+	mb := c.MaxSizeMB
+	if mb <= 0 {
+		mb = DefaultClipMaxSizeMB
+	}
+	return int64(min(mb, MaxClipSizeMB)) << 20
 }
 
 // Default returns a safe configuration: edge role, closed policy, audit on.

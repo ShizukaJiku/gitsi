@@ -29,10 +29,10 @@ minutes. What is announced is validated: those paths end up inside PowerShell co
 
 ## Security and control
 
-**D6 - Optional features, enabled deliberately.** Whatever moves content or runs something (`send`, `take`, `services`, `exec`) is
-off on the edge. It is enabled with `gitsi policy set <feature> on` or by answering "y" when gitsi asks at a terminal on first use
+**D6 - Optional features, enabled deliberately.** Whatever moves content or runs something (`send`, `take`, `services`, `exec`,
+`clip`) is off on the edge. It is enabled with `gitsi policy set <feature> on` or by answering "y" when gitsi asks at a terminal on first use
 (without a terminal, or with `--json`, it does not ask: it fails with the hint). The hub does not require it: there those commands
-only move files within its own mailbox. Each enablement and each transfer is recorded in `~/.gitsi/audit.log` (action, name, size;
+only move files within its own mailbox. `clip` is the exception: it touches the hub user's clipboard, so the hub requires its own. Each enablement and each transfer is recorded in `~/.gitsi/audit.log` (action, name, size;
 never content), which rotates past 1 MiB.
 
 **D7 - Inputs validated before reaching a shell.** Every name, branch or path that ends up in a PowerShell command goes through
@@ -97,12 +97,22 @@ against the bridge. Each line comes from a read-only probe of the module that kn
 depends on it is not queried and status exits with that error. `check` does everything that changes nothing (tools, network, login,
 hub, tunnel, protocol, version) and leaves a report to paste; `check --active` also tests sending and running.
 
-**D15 - Hub notices (`watch`).** The edge opens `gitsi watch` in the foreground and the hub sends it typed notices (new version,
+**D15 - Hub notices (`watch`).** The edge opens `gitsi watch` (in a terminal, or in the tray with `-tray`) and the hub sends it
+typed notices (new version,
 outbox item, finished job, bridge branch that changes). The edge says what it knows when it connects and the hub only notifies the
 differences (the first time, a baseline); heartbeat every 30 s and reconnection with growing waits. `gitsi edges` shows on the hub
 who is listening. Opt-in reactions (`watch.auto_update`, `watch.auto_take`, `watch.report`, `watch.auto_fetch`, the last one only in
 the repo where watch runs) run gitsi itself without interactive input; a new version is attempted only once and, once installed,
 watch restarts with it. Full design in `WATCH.md`.
+
+**D26 - Shared clipboard.** With the `clip` policy on both machines, `watch` shares the clipboard: a hotkey
+(`clip.hotkey`, Ctrl+Shift+Alt+C) sends what is copied, or every copy with `clip.auto`, and what arrives is written to the clipboard.
+It travels inside the watch session (frames both ways) to a single slot on the hub that each copy replaces and that expires after
+10 minutes; only what is copied while watch runs is delivered, and each side applies its own `clip.max_size_mb`. On the hub, `watch`
+runs in the user's session (sshd sessions and services cannot reach the clipboard) and may start on logon (`-autostart`); on the
+edge it is always started by hand, in a terminal or in the tray. Hotkey, change listener, text and tray use the Windows API through
+`syscall`; images and files, PowerShell. Auto mode skips this process's own writes and copies marked private by password managers.
+Full design in `CLIP.md`.
 
 **D16 - The hub's Docker with the official client.** The hub publishes `docker.exe` and the `compose` and `buildx` plugins. `gitsi
 docker` (it requires `exec`) downloads them verifying their SHA256, adds their folder to the account's PATH and creates the
@@ -123,7 +133,8 @@ Publishing does not fail with the hub's binary in use either. The build keeps th
 binary is harder to inspect, and some endpoint protection products quarantine stripped Go executables.
 
 **D19 - Retention: nothing piles up.** Mailbox items and finished jobs on the hub, after 14 days; partial downloads and `take -clip`
-copies on the receiving machine, after 7. No background processes: cleanup is triggered by use (at most once an hour on the hub)
+copies on the receiving machine, after 7; the hub's clipboard slot, after 10 minutes; `watch.log` (the tray) and `audit.log`
+rotate past 1 MiB. No background processes: cleanup is triggered by use (at most once an hour on the hub)
 and `gitsi clean [-dry-run]` applies it on the spot.
 
 **D20 - Files without half states.** `config.json`, `~/.ssh/config` and `known_hosts` are written atomically (temporary file and

@@ -158,11 +158,20 @@ func lastLine(out string, err error) string {
 	return err.Error()
 }
 
-// restartSelf starts 'gitsi watch' with the new binary in the same terminal and waits for it to end (a variable in tests).
-var restartSelf = func(env *module.Env) error {
+// restartSelf starts watch again with the new binary (a variable in tests). In a terminal it runs in the same one and waits for it
+// to end; in the tray it starts a new tray process and this one ends.
+var restartSelf = func(env *module.Env, tray bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	if tray {
+		cmd := procx.Detached(exec.Command(exe, "watch", "-tray"))
+		cmd.Env = append(os.Environ(), childEnv+"=1")
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("could not restart watch with the new version: %w", err)
+		}
+		return nil
 	}
 	cmd := exec.Command(exe, "watch")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr

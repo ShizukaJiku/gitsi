@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +16,11 @@ import (
 	"time"
 
 	"github.com/ShizukaJiku/gitsi/internal/app"
+	"github.com/ShizukaJiku/gitsi/internal/clip"
+	"github.com/ShizukaJiku/gitsi/internal/hubclient"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
 	"github.com/ShizukaJiku/gitsi/internal/procx"
+	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
@@ -161,6 +166,72 @@ func TestThroughRealOpenSSH(t *testing.T) {
 		}
 		for _, it := range func() []mailbox.Item { l, _ := st.List(mailbox.Outbox); return l }() {
 			st.Remove(mailbox.Outbox, it.ID)
+		}
+	})
+
+	// The shared clipboard over a real ssh (docs/CLIP.md): inside one watch session the edge's copy reaches the hub's slot, and a
+	// copy the hub stores there reaches the edge. The clipboard itself is not touched: the items go in and out of the session.
+	t.Run("watch carries the clipboard both ways", func(t *testing.T) {
+		cfgPath := filepath.Join(hubHome, ".gitsi", "config.json")
+		os.WriteFile(cfgPath, []byte(`{"version":1,"role":"hub","policy":{"allow_clip":true}}`), 0o600)
+		defer os.WriteFile(cfgPath, []byte(`{"version":1,"role":"hub"}`), 0o600)
+
+		tr := &transport.SSHExec{Host: "127.0.0.1", User: user, Port: port, KeyFile: key}
+		var got lockedItems
+		var out lockedBuf
+		c := &watch.Client{
+			Dial: func(ctx context.Context) (io.ReadWriter, func(), error) {
+				conn, err := hubclient.Dial(ctx, tr, watch.Cap, clip.Cap)
+				if err != nil {
+					return nil, nil, err
+				}
+				if !conn.Has(clip.Cap) {
+					conn.Close()
+					return nil, nil, errors.New("the hub must offer the clipboard with its clip policy on")
+				}
+				return conn.RW, func() { conn.Close() }, nil
+			},
+			Fatal:    func(error) bool { return true },
+			Identity: watch.Request{Edge: "E2E", User: "edge", Version: "e2e"},
+			Out:      &out,
+			Clip:     func() bool { return true },
+			ClipMax:  1 << 20,
+			OnClip:   got.add,
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		defer func() { cancel(); <-done }()
+
+		data := []byte("copied on the edge, over a real sshd")
+		it := clip.Item{ID: clip.NewID(), Kind: clip.KindText, Size: int64(len(data)), SHA256: clip.Sum(data), Time: time.Now()}
+		deadline := time.Now().Add(30 * time.Second)
+		var err error
+		for {
+			if err = c.SendClip(ctx, it, data); !errors.Is(err, watch.ErrNoClip) || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatalf("send: %v\n%s", err, out.String())
+		}
+		slot := &clip.Slot{Dir: filepath.Join(hubRoot, "clip")}
+		cur, ok := slot.Current(time.Now())
+		if b, _ := slot.Data(cur); !ok || cur.Origin != "edge@E2E" || string(b) != string(data) {
+			t.Fatalf("the hub's slot: %+v %q", cur, b)
+		}
+
+		back := []byte("copied on the hub")
+		hubIt := clip.Item{ID: clip.NewID(), Kind: clip.KindText, Size: int64(len(back)), SHA256: clip.Sum(back), Origin: clip.OriginHub, Time: time.Now()}
+		if err := slot.Put(hubIt, back); err != nil {
+			t.Fatal(err)
+		}
+		for got.count() == 0 && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if items, datas := got.all(); len(items) != 1 || items[0].ID != hubIt.ID || string(datas[0]) != string(back) {
+			t.Fatalf("the edge must receive the hub's copy once: %+v\n%s", items, out.String())
 		}
 	})
 
@@ -441,3 +512,24 @@ func (l *lockedBuf) Write(p []byte) (int, error) {
 	return l.b.Write(p)
 }
 func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+// lockedItems collects the clipboard items watch delivers (from its session goroutine) for the test to read.
+type lockedItems struct {
+	mu    sync.Mutex
+	items []clip.Item
+	data  [][]byte
+}
+
+func (l *lockedItems) add(_ context.Context, it clip.Item, data []byte) {
+	l.mu.Lock()
+	l.items, l.data = append(l.items, it), append(l.data, data)
+	l.mu.Unlock()
+}
+
+func (l *lockedItems) count() int { l.mu.Lock(); defer l.mu.Unlock(); return len(l.items) }
+
+func (l *lockedItems) all() ([]clip.Item, [][]byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.items, l.data
+}

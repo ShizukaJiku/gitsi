@@ -47,12 +47,15 @@ internal/
   progress           console progress (phases, transfers) (leaf)
   version            version, commit and build date (leaf)
   winps              launches powershell.exe without the PSModulePath inherited from PowerShell 7 (leaf)
+  procx              helper processes without a console window of their own; detached processes for the tray (leaf)
   testhome           tests only: TestMain with a temporary profile (nothing touches the user's real data)
   -- system adapters --
   transport          Transport interface + SSHExec (ssh.exe/scp.exe): Run, Stream, Forward (-L only); optional
                      capabilities by type assertion: Executor (live output), Fetcher (download), *Diagnostics (stderr)
   gitx               git.exe wrapper (injectable Runner)
   clipboard          reading and writing the Windows clipboard (PowerShell -STA, through winps)
+  desktop            the user's desktop through the Windows API (syscall): hotkey, clipboard listener and counter, direct
+                     text, tray icon and menu, single-instance lock, the hub's logon entry
   install            publishing the binary itself (moves the previous one aside when in use) and hashes
   dockercli          the official docker client for the edge: publish it on the hub, download and verify it, account PATH, context
   -- protocol and mailbox --
@@ -60,8 +63,10 @@ internal/
   hub                protocol server (Serve + Handler); it does not know the CLI
   hubclient          opens the `serve --stdio` session through Transport (the hub finds its gitsi in its own config)
   mailbox            mailbox store (Store), the hub's Handler and the edge's Client; pure domain, no CLI
-  archive            safe tar of folders (no links, no paths that escape)
-  watch              hub notices to the edge: the hub's Handler (watches binary, outbox, jobs, repos), the edge's Client (reconnects)
+  archive            safe tar of folders and of what Explorer copies (no links, no paths that escape)
+  watch              hub notices to the edge: the hub's Handler (watches binary, outbox, jobs, repos), the edge's Client (reconnects);
+                     the session also carries the shared clipboard both ways
+  clip               the shared clipboard: the item, its frames, the hub's slot and the Sharer (read, filter, send, receive, write)
   layout             the hub's layout (Home, Repos, Binary, Mailbox, Jobs): computed by the hub, sent in the greeting
   hubview            how the edge discovers it (greeting + 10 min cache per user@host:port)
   -- features (one package per CLI group) --
@@ -74,7 +79,7 @@ internal/
     doctor           check                               (diagnosis of edge and hub, report, active tests)
     policycmd        policy
     update           update [-check | -publish]
-    watchcmd         watch (edge, foreground), edges (hub)
+    watchcmd         watch (both: notices and clipboard; -tray, -autostart on the hub), edges (hub)
     cleancmd         clean [-dry-run]                    (applies retention on the spot)
     dockercmd        docker                              (edge: sets up the official docker against the hub's Docker)
     statuscmd        status                              (gathers the read-only probes app hands it: drop.Pending,
@@ -97,7 +102,7 @@ repo    share get list sync status publish
 svc     add rm ls up
 job     start ls logs stop get
 check   [--active]                       diagnosis
-run, update, policy, config, watch      top level (+ edges on the hub)
+run, update, policy, config, watch      top level (+ edges on the hub; watch also on the hub, for the clipboard)
 clean, docker                           top level
 daily use: status send take share sync publish (status, send and take are top level)
 ```

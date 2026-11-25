@@ -76,7 +76,111 @@ func PackWith(src string, w io.Writer, opt Options) (st Stats, err error) {
 		w = zw
 	}
 	tw := tar.NewWriter(w)
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, werr error) error {
+	if err := addTree(tw, root, "", opt, &st); err != nil {
+		return st, err
+	}
+	if err := tw.Close(); err != nil {
+		return st, err
+	}
+	if zw != nil {
+		return st, zw.Close()
+	}
+	return st, nil
+}
+
+// PackPaths writes to w a tar with one top-level entry per path: a file by its name, a folder by its name with its content inside
+// (what Explorer copies to the clipboard: several files and folders from one folder). Two paths with the same name are refused:
+// the second would overwrite the first when extracted.
+func PackPaths(paths []string, w io.Writer, opt Options) (st Stats, err error) {
+	if err := ValidatePatterns(opt.Exclude); err != nil {
+		return st, err
+	}
+	if len(paths) == 0 {
+		return st, errors.New("nothing to pack")
+	}
+	var zw *gzip.Writer
+	if opt.Gzip {
+		zw, _ = gzip.NewWriterLevel(w, gzip.BestSpeed)
+		w = zw
+	}
+	tw := tar.NewWriter(w)
+	seen := map[string]bool{}
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return st, err
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return st, err
+		}
+		name := filepath.Base(abs)
+		if err := safe.FileName(name); err != nil {
+			return st, fmt.Errorf("cannot pack %q: %v", name, err)
+		}
+		if seen[strings.ToLower(name)] {
+			return st, fmt.Errorf("two items are called %q: pack them from different folders", name)
+		}
+		seen[strings.ToLower(name)] = true
+		switch {
+		case info.IsDir():
+			if err := writeHeader(tw, info, name+"/"); err != nil {
+				return st, err
+			}
+			if err := addTree(tw, abs, name+"/", opt, &st); err != nil {
+				return st, err
+			}
+		case info.Mode().IsRegular():
+			if err := addFile(tw, abs, info, name, &st); err != nil {
+				return st, err
+			}
+		default:
+			st.Skipped++
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return st, err
+	}
+	if zw != nil {
+		return st, zw.Close()
+	}
+	return st, nil
+}
+
+// ErrTooLarge is returned by TreeSize when the content exceeds the limit.
+var ErrTooLarge = errors.New("the content exceeds the size limit")
+
+// TreeSize adds up the size of the files under paths (files or folders), stopping as soon as it exceeds limit (> 0): a folder of
+// several GB copied by mistake is refused without walking it whole, let alone packing it.
+func TreeSize(paths []string, limit int64) (int64, error) {
+	var total int64
+	for _, p := range paths {
+		err := filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() {
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				total += info.Size()
+				if limit > 0 && total > limit {
+					return ErrTooLarge
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// addTree adds the content of root (not root itself) with names prefixed by prefix ("" or "name/").
+func addTree(tw *tar.Writer, root, prefix string, opt Options, st *Stats) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -107,41 +211,36 @@ func PackWith(src string, w io.Writer, opt Options) (st Stats, err error) {
 		if nerr := safe.FileName(d.Name()); nerr != nil {
 			return fmt.Errorf("cannot send %q: %v (exclude it with -exclude %s)", rel, nerr, globFor(d.Name()))
 		}
-		h, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		h.Name = rel
 		if info.IsDir() {
-			h.Name += "/"
+			return writeHeader(tw, info, prefix+rel+"/")
 		}
-		h.Uid, h.Gid, h.Uname, h.Gname = 0, 0, "", ""
-		if err := tw.WriteHeader(h); err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		f, err := os.Open(p)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		n, err := io.Copy(tw, f)
-		st.Files++
-		st.Bytes += n
-		return err
+		return addFile(tw, p, info, prefix+rel, st)
 	})
+}
+
+func writeHeader(tw *tar.Writer, info fs.FileInfo, name string) error {
+	h, err := tar.FileInfoHeader(info, "")
 	if err != nil {
-		return st, err
+		return err
 	}
-	if err := tw.Close(); err != nil {
-		return st, err
+	h.Name = name
+	h.Uid, h.Gid, h.Uname, h.Gname = 0, 0, "", ""
+	return tw.WriteHeader(h)
+}
+
+func addFile(tw *tar.Writer, p string, info fs.FileInfo, name string, st *Stats) error {
+	if err := writeHeader(tw, info, name); err != nil {
+		return err
 	}
-	if zw != nil {
-		return st, zw.Close()
+	f, err := os.Open(p)
+	if err != nil {
+		return err
 	}
-	return st, nil
+	defer f.Close()
+	n, err := io.Copy(tw, f)
+	st.Files++
+	st.Bytes += n
+	return err
 }
 
 // ValidatePatterns checks the syntax of the Exclude patterns. Call it before packing (or before connecting) so a mistyped

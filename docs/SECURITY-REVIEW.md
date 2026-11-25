@@ -22,8 +22,10 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
 - Listeners: only on `127.0.0.1`, for the services' `-L` tunnels (disabled by default) and a test tunnel in `gitsi check`.
 - It does **not** run `sshd`, does **not** use `ssh -R` or reverse forwarding, and does **not** open ports reachable from the
   network. `gitsi check` verifies it and warns if anything of gitsi listened outside loopback.
-- `gitsi watch` (optional, opened by the user in a terminal) keeps an outbound SSH session over which the hub sends **notices**
-  (new version, item available, job finished). It never receives commands through it.
+- `gitsi watch` (optional, opened by the user in a terminal or in the tray) keeps an outbound SSH session over which the hub sends
+  **notices** (new version, item available, job finished). It never receives commands through it. With the `clip` policy on, the
+  same session also carries **clipboard items** both ways (text, image or files the user copied and chose to share: the hotkey, or
+  every copy with `clip.auto`).
 
 ### Processes it starts
 | Process | What for | When |
@@ -37,6 +39,10 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
 | `docker.exe` (the official, signed Docker client) | drive the hub's Docker over SSH | `gitsi docker` and when the user runs `docker` |
 | `gitsi.exe` itself | `watch`'s reactions (update, pull an item, leave a report) | only when the user enabled them |
 | `git.exe fetch` | the `watch.auto_fetch` reaction: update the remote branches of the repo where watch runs when it changes on the hub | only when the user enabled it |
+| `gitsi.exe watch -tray` | the same binary, detached (no console) so it stays in the tray | only when the user runs `gitsi watch -tray` |
+| `notepad.exe` | open watch's log from the tray menu | only when the user picks it |
+
+Every helper process whose output gitsi reads is started with `CREATE_NO_WINDOW`, so no console window flashes on the desktop.
 
 ### Files it writes
 - `%USERPROFILE%\.gitsi\`: `config.json` (configuration), `hub-layout.json` (cache), `watch-state.json`, `audit.log` (rotates past
@@ -45,6 +51,8 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
   the user gives it), `gitsi_ed25519` and `.pub` (its own key).
 - Received items: `%USERPROFILE%\Downloads\gitsi` (or the folder the user gives). Files and folders taken to the clipboard:
   `%LOCALAPPDATA%\gitsi\clipboard\<id>\` (deleted after 7 days).
+- With the shared clipboard: received files and images in `%LOCALAPPDATA%\gitsi\clipboard\<id>\` (deleted after 7 days), and in
+  the tray, watch's output in `%LOCALAPPDATA%\gitsi\watch.log` (rotates past 1 MiB).
 - Docker client (when `gitsi docker` is used): `%LOCALAPPDATA%\gitsi\docker\docker-cli\docker.exe`, plugins in
   `%USERPROFILE%\.docker\cli-plugins`, the `gitsi-hub` context in `%USERPROFILE%\.docker`, and that folder added to the account's
   PATH.
@@ -56,8 +64,11 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
 
 ## 3. What it does NOT do on the edge
 - It does not scan or read the user's files on its own: it only sends what the user explicitly tells it to.
-- It does not persist: no services, scheduled tasks, Run keys or autostart. `gitsi watch` runs in the foreground in a terminal and
-  closes with Ctrl+C.
+- It does not persist: no services, scheduled tasks, Run keys or autostart on the edge (`watch -autostart` is refused there).
+  `gitsi watch` is started by hand, in a terminal (closes with Ctrl+C) or in the tray (a visible icon; quits from its menu).
+- It does not monitor the clipboard unless the user enabled the `clip` policy and runs `gitsi watch`; then it is notified of
+  clipboard changes, and reads the clipboard only on the hotkey, or on every copy when the user turned on `clip.auto`. Auto mode
+  skips copies marked private by password managers. Every item sent or received is recorded in `audit.log` (never its content).
 - It does not elevate privileges: it runs as the user and does not need more.
 - It uses no hiding techniques: no code injection, no obfuscation or packing. It is built **with** its symbol table (and without
   the build machine's paths), which makes it easier to inspect.
@@ -73,8 +84,14 @@ analysis of the file will see, can:
 - edit `sshd_config` (hardening it: no passwords) and `authorized_keys` / `administrators_authorized_keys`;
 - create/replace the `gitsi-ssh` firewall rule (the edge's IP only) and adjust permissions with `icacls`.
 
-There is also **one** Windows API call: `shell32!IsUserAnAdmin` (it loads the system's `shell32.dll`) to know whether the process
-is an administrator. There are no other system calls and no own or third-party DLLs.
+Windows API calls, all to the system's own DLLs through Go's standard library (no own or third-party DLLs):
+- `shell32!IsUserAnAdmin`, to know whether the process is an administrator;
+- for the shared clipboard and the tray (only with the `clip` policy on, or `watch -tray`): `RegisterHotKey` (the user's send
+  hotkey; a global hotkey, not a keyboard hook: it sees no other keys), `AddClipboardFormatListener`,
+  `GetClipboardSequenceNumber`, `OpenClipboard`/`GetClipboardData`/`SetClipboardData` (text), `Shell_NotifyIconW` and a popup
+  menu, a hidden window and its message loop, and `CreateMutexW` (one watch per user);
+- on the hub only, `RegSetValueExW` on `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (value `gitsi-watch`), when the user
+  runs `gitsi watch -autostart on`.
 
 ## 4. Verification (check it yourself)
 - **Full source code** in the project repository.

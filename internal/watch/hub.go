@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/clip"
 	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"github.com/ShizukaJiku/gitsi/internal/proto"
 )
@@ -38,10 +39,18 @@ type Handler struct {
 	Poll       time.Duration // how often the state is checked (2 s)
 	Ping       time.Duration // how often the heartbeat is sent (30 s)
 	Now        func() time.Time
+
+	// Clip is the hub's clipboard slot; nil when the hub does not share its clipboard (its clip policy is off).
+	Clip     *clip.Slot
+	ClipMax  int64         // the largest item the hub accepts from an edge
+	ClipPoll time.Duration // how often the slot is checked (100 ms, a file date: a copy should arrive almost at once)
 }
 
 // Handles implements hub.Router.
 func (h *Handler) Handles(k proto.Kind) bool { return k == proto.KindWatch }
+
+// TakesOver implements hub.SessionHandler: a watch session lasts while the edge listens and carries its clipboard items.
+func (h *Handler) TakesOver(k proto.Kind) bool { return k == proto.KindWatch }
 
 func (h *Handler) now() time.Time {
 	if h.Now != nil {
@@ -61,9 +70,22 @@ type EdgeState struct {
 	Connected bool      `json:"connected"`
 }
 
-// Handle implements hub.Handler. It does not return while the edge listens: it ends when the context is cancelled or a write fails
-// (the edge left: the heartbeat detects it at most Ping later).
+// Handle implements hub.Handler: a session that does not read what the edge sends (no clipboard from the edge).
 func (h *Handler) Handle(ctx context.Context, f proto.Frame, w io.Writer) error {
+	return h.HandleSession(ctx, f, nil, w)
+}
+
+// inbound is what the edge sent inside the session: a clipboard item (or why it was refused), or the end of the channel.
+type inbound struct {
+	it   clip.Item
+	data []byte
+	err  error
+}
+
+// HandleSession implements hub.SessionHandler. It does not return while the edge listens: it ends when the context is cancelled,
+// the edge closes the channel or a write fails. Only this goroutine writes to w: notices, heartbeats and clipboard items never
+// interleave.
+func (h *Handler) HandleSession(ctx context.Context, f proto.Frame, r io.Reader, w io.Writer) error {
 	var req Request
 	if err := json.Unmarshal(f.Payload, &req); err != nil {
 		return fmt.Errorf("invalid Watch: %w", err)
@@ -86,6 +108,48 @@ func (h *Handler) Handle(ctx context.Context, f proto.Frame, w io.Writer) error 
 	}
 	if err := send(Event{Type: EvHello, Version: h.HubVersion}); err != nil {
 		return err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	in := make(chan inbound, 1)
+	if r != nil {
+		go h.read(ctx, r, req.Clip && h.Clip != nil, in)
+	}
+	edgeID := req.User + "@" + req.Edge
+	clipOn := req.Clip && h.Clip != nil
+	since := h.now().Add(-time.Duration(max(req.ClipAgeMS, 0)) * time.Millisecond)
+	lastClip := req.ClipSeen // the last slot item this session dealt with (delivered, skipped or stored from this edge)
+	checkClip := func() error {
+		cur, ok := h.Clip.Current(h.now())
+		if !ok || cur.ID == lastClip {
+			return nil
+		}
+		if cur.Origin == edgeID || !cur.Time.After(since) {
+			lastClip = cur.ID // its own copy, or one made before this edge's watch started: not news
+			return nil
+		}
+		if req.ClipMax > 0 && cur.Size > req.ClipMax {
+			lastClip = cur.ID
+			return send(Event{Type: EvClipRefused, ID: cur.ID, Detail: fmt.Sprintf("the hub's copy (%s) is larger than this edge accepts (clip.max_size_mb)", cur.Describe())})
+		}
+		data, err := h.Clip.Data(cur)
+		if err != nil {
+			return nil // replaced in the meantime: the next check sees the newer one
+		}
+		lastClip = cur.ID
+		return clip.WriteItem(w, cur, data)
+	}
+	store := func(m inbound) error {
+		if m.err != nil {
+			return send(Event{Type: EvClipRefused, ID: m.it.ID, Detail: Printable(m.err.Error(), 280)})
+		}
+		m.it.Origin, m.it.Time = edgeID, h.now() // the hub decides both: an edge cannot pose as another or make an item outlive TTL
+		if err := h.Clip.Put(m.it, m.data); err != nil {
+			return send(Event{Type: EvClipRefused, ID: m.it.ID, Detail: Printable("the hub could not store it: "+err.Error(), 280)})
+		}
+		lastClip = m.it.ID
+		return send(Event{Type: EvClipStored, ID: m.it.ID})
 	}
 
 	seenOutbox := set(req.Outbox)
@@ -170,12 +234,15 @@ func (h *Handler) Handle(ctx context.Context, f proto.Frame, w io.Writer) error 
 		return nil
 	}
 
-	poll, ping := h.Poll, h.Ping
+	poll, ping, clipPoll := h.Poll, h.Ping, h.ClipPoll
 	if poll <= 0 {
 		poll = 2 * time.Second
 	}
 	if ping <= 0 {
 		ping = 30 * time.Second
+	}
+	if clipPoll <= 0 {
+		clipPoll = 100 * time.Millisecond
 	}
 	if err := check(); err != nil {
 		return err
@@ -183,10 +250,27 @@ func (h *Handler) Handle(ctx context.Context, f proto.Frame, w io.Writer) error 
 	tp, tk := time.NewTicker(poll), time.NewTicker(ping)
 	defer tp.Stop()
 	defer tk.Stop()
+	var clipTick <-chan time.Time
+	if clipOn {
+		tc := time.NewTicker(clipPoll)
+		defer tc.Stop()
+		clipTick = tc.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case m := <-in:
+			if m.err != nil && !errors.Is(m.err, clip.ErrRefused) {
+				return nil // the edge closed the channel (it left) or broke the protocol: the session is over
+			}
+			if err := store(m); err != nil {
+				return err
+			}
+		case <-clipTick:
+			if err := checkClip(); err != nil {
+				return err
+			}
 		case <-tp.C:
 			if err := check(); err != nil {
 				return err
@@ -197,6 +281,38 @@ func (h *Handler) Handle(ctx context.Context, f proto.Frame, w io.Writer) error 
 			}
 			st.LastPing = h.now()
 			h.saveState(st)
+		}
+	}
+}
+
+// read receives what the edge sends inside the session. Only clipboard items are expected; anything else is ignored. A refused item
+// is passed on (the edge is told why) and reading goes on: ReadItem already drained its content.
+func (h *Handler) read(ctx context.Context, r io.Reader, clipOn bool, in chan<- inbound) {
+	limit := h.ClipMax
+	if !clipOn {
+		limit = -1 // nothing is accepted, but the content is still drained so the channel stays in sync
+	}
+	for {
+		f, err := proto.ReadFrame(r)
+		if err == nil && f.Kind != proto.KindClip {
+			continue
+		}
+		var m inbound
+		if err != nil {
+			m.err = err
+		} else {
+			m.it, m.data, m.err = clip.ReadItem(f, r, limit)
+			if !clipOn && errors.Is(m.err, clip.ErrRefused) {
+				m.err = fmt.Errorf("%w: the hub does not share its clipboard (on the hub: gitsi policy set clip on)", clip.ErrRefused)
+			}
+		}
+		select {
+		case in <- m:
+		case <-ctx.Done():
+			return
+		}
+		if m.err != nil && !errors.Is(m.err, clip.ErrRefused) {
+			return
 		}
 	}
 }

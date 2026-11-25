@@ -60,7 +60,7 @@ func TestCompleteValuesFromTheCommand(t *testing.T) {
 	if got := completeWith(t, config.RoleEdge, cfg, "svc", "up", "p"); got != "postgres" {
 		t.Errorf("svc up also proposes the known ones: %q", got)
 	}
-	if got := completeWith(t, config.RoleEdge, nil, "policy", "set", ""); got != "exec send services take" {
+	if got := completeWith(t, config.RoleEdge, nil, "policy", "set", ""); got != "clip exec send services take" {
 		t.Errorf("policy set: %q", got)
 	}
 	if got := completeWith(t, config.RoleEdge, nil, "policy", "set", "exec", ""); got != "off on" {

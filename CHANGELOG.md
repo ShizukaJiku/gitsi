@@ -3,6 +3,27 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Shared clipboard between hub and edge (`docs/CLIP.md`): with the new `clip` policy on both machines and `gitsi watch` running on
+  both, Ctrl+Shift+Alt+C sends what is copied and the other machine pastes it with Ctrl+V. Text, images and files copied in
+  Explorer travel inside the watch session to a single slot on the hub that expires after 10 minutes. `clip.auto` sends every
+  copy (skipping copies marked private by password managers); `clip.hotkey` and `clip.max_size_mb` tune it.
+- `gitsi watch -tray` keeps watch in the tray, with a menu (send now, send every copy, log, quit) and notifications; its output goes
+  to `%LOCALAPPDATA%\gitsi\watch.log`. Only one watch runs per user and machine.
+- `gitsi watch` on the hub, to share its clipboard, and `gitsi watch -autostart on|off` (hub only) to start it on logon.
+
+### Changed
+- The edge's principle "nothing in the background" is now "nothing hidden or unattended": long-running things are started by hand
+  and stay visible, in a terminal or in the tray; nothing starts on its own.
+- The watch session carries frames both ways (clipboard items from the edge); protocol frames `KindClip` and `KindClipData` and
+  the `clip` capability are new.
+
+### Fixed
+- Helper processes (PowerShell, git, ssh) no longer flash console windows when gitsi, or its tests, run from a process without a
+  console, and background jobs started through WMI start hidden.
+
 ## [1.2.0] - 2026-11-23
 
 ### Added

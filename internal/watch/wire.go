@@ -21,6 +21,9 @@ const (
 	EvOutbox   = "outbox.item"      // an item appeared in the outbox
 	EvJobDone  = "job.finished"     // a job finished
 	EvRepo     = "repo.updated"     // a bridge branch changed (or is new)
+
+	EvClipStored  = "clip.stored"  // the hub stored the edge's clipboard item in its slot
+	EvClipRefused = "clip.refused" // a clipboard item was not stored (from the edge) or not delivered (to the edge), and why
 )
 
 // Request is what the edge sends when subscribing: who it is and what it knows.
@@ -36,6 +39,14 @@ type Request struct {
 	Heads     map[string]string `json:"heads"`
 	First     bool              `json:"first"`     // no saved state: asks for a baseline
 	Reactions []string          `json:"reactions"` // active reactions (names only, for 'gitsi edges')
+
+	// The shared clipboard (docs/CLIP.md). Clip asks for it; the rest only matters then.
+	Clip bool `json:"clip,omitempty"`
+	// ClipAgeMS is how long ago, in milliseconds, this edge's watch started: only what is copied after that is delivered. A
+	// duration instead of a time, so the two machines' clocks do not need to agree.
+	ClipAgeMS int64  `json:"clip_age_ms,omitempty"`
+	ClipSeen  string `json:"clip_seen,omitempty"` // the last item already received (a reconnection does not repeat it)
+	ClipMax   int64  `json:"clip_max,omitempty"`  // the largest item this edge accepts
 }
 
 // Event is a notice from the hub. Data only: the fields its type does not use stay empty.
@@ -55,6 +66,7 @@ type Event struct {
 	Repo    string            `json:"repo,omitempty"`    // repo.updated
 	Branch  string            `json:"branch,omitempty"`  // repo.updated
 	Commit  string            `json:"commit,omitempty"`  // repo.updated
+	Detail  string            `json:"detail,omitempty"`  // clip.refused: why
 }
 
 // HeadKey is the key of a branch tip in Heads: the repo name has no "/", so the split is at the first one.
@@ -102,6 +114,10 @@ func (e Event) Valid() bool {
 		return itemIDRe.MatchString(e.ID) && (e.Kind == "file" || e.Kind == "dir" || e.Kind == "text") && e.Size >= 0 && len(e.Name) <= 255
 	case EvJobDone:
 		return itemIDRe.MatchString(e.ID) && exitRe.MatchString(e.Exit)
+	case EvClipStored:
+		return itemIDRe.MatchString(e.ID)
+	case EvClipRefused:
+		return itemIDRe.MatchString(e.ID) && len(e.Detail) <= 300
 	}
 	return false // unknown type: ignored
 }

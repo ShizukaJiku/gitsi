@@ -8,3 +8,5 @@ import "os/exec"
 const Flags = 0
 
 func hide(*exec.Cmd) {}
+
+func detach(*exec.Cmd) {}

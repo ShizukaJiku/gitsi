@@ -20,6 +20,14 @@ type Handler interface {
 	Handle(ctx context.Context, f proto.Frame, w io.Writer) error
 }
 
+// SessionHandler is an optional Handler capability (checked by type assertion): for the kinds it takes over, it keeps the session
+// for itself and also receives the rest of the edge's frames (r). The session ends when HandleSession returns. watch uses it: its
+// session lasts while the edge listens, and the edge sends clipboard items inside it.
+type SessionHandler interface {
+	TakesOver(k proto.Kind) bool
+	HandleSession(ctx context.Context, f proto.Frame, r io.Reader, w io.Writer) error
+}
+
 // Config describes the server.
 type Config struct {
 	Agent   string            // announced in the Hello
@@ -79,6 +87,12 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, cfg Config) error {
 		if cfg.Handler == nil {
 			_ = proto.WriteError(out, "operation not supported by this hub")
 			continue
+		}
+		if sh, ok := cfg.Handler.(SessionHandler); ok && sh.TakesOver(f.Kind) {
+			if err := sh.HandleSession(ctx, f, in, out); err != nil {
+				_ = proto.WriteError(out, err.Error())
+			}
+			return nil // the handler owned the rest of the session
 		}
 		if err := cfg.Handler.Handle(ctx, f, out); err != nil {
 			if werr := proto.WriteError(out, err.Error()); werr != nil {

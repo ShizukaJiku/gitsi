@@ -17,8 +17,8 @@ consumes. A single Go binary. Before changing something, read what applies:
 - **The hub never initiates anything toward the edge**: whatever goes from the hub to the edge, the edge pulls (mailbox, `watch`
   notices).
 - **Opt-in**: whatever moves content or runs something on the edge is declared with `Command.Feature` and audited.
-- **Nothing in the background on the edge**: no services or scheduled tasks; long-running things run in the foreground (`svc up`,
-  `watch`).
+- **Nothing hidden or unattended on the edge**: no services, scheduled tasks or logon entries; long-running things are started by
+  hand and stay visible, in a terminal (`svc up`, `watch`) or in the tray (`watch -tray`), and quit from there.
 - **Simplicity**: one way to do each thing; good defaults (bare commands do the common thing).
 - **Semantic versioning**: the CLI, the exit codes, the configuration file and the hub <-> edge protocol are the public interface.
   Code and docs describe the current state, without "previously..." notes; history lives in git and in `CHANGELOG.md`.
@@ -28,9 +28,11 @@ consumes. A single Go binary. Before changing something, read what applies:
 - **No module (`internal/modules/*`) depends on another module.** Shared code goes to an `internal/` package (e.g. `dockercli`,
   `cleanup`, `install`); a handler reaches another module as a function from `app` (`servecmd.New(drop.HubHandler, ...)`).
 - Domain packages without CLI or ssh (`mailbox`, `watch`, `hub`, `proto`) receive an `io.ReadWriter` or interfaces.
-- Leaf packages without internal dependencies: `fault`, `fsx`, `safe`, `proto`, `progress`, `version`, `winps`.
+- Leaf packages without internal dependencies: `fault`, `fsx`, `safe`, `proto`, `procx`, `progress`, `version`, `winps`.
 - Every local `powershell.exe` is started with `winps.Command` (or `cmd.Env = winps.Env(os.Environ())`): otherwise, from a
   PowerShell 7 console it inherits its `PSModulePath` and basic cmdlets fail.
+- Every helper process whose input and output are not the console (captured output, pipes) goes through `procx.Background`:
+  started from a process without a console (the tray, an editor, an agent, the tests) it would otherwise flash a window.
 - Everything that touches the system is injectable (a function or an interface with a real default): `transport.Transport`,
   `gitx.Runner`, `provision.System`, `dockercli.Runner`, `var X = func...` variables for tests.
 - Optional transport capabilities by type assertion (`transport.Executor`, `transport.Fetcher`), like `io.WriterTo`.

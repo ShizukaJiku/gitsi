@@ -199,6 +199,20 @@ gitsi config set watch.auto_fetch on                            # with watch ope
 When the network drops or the hub goes off, `watch` reconnects on its own (5 s, 10 s, 30 s, 1 min, up to 5 min) and neither
 repeats nor loses notices.
 
+## Guide: shared clipboard
+Copy on one machine and paste on the other: Ctrl+C, then **Ctrl+Shift+Alt+C** sends what you copied, and Ctrl+V on the other
+machine. It works both ways while `watch` runs on both, inside the session the edge already opens ([`docs/CLIP.md`](docs/CLIP.md)).
+```powershell
+gitsi policy set clip on              # on each machine
+gitsi watch -tray                     # on each machine: watch in the tray (or gitsi watch, in a terminal)
+gitsi watch -autostart on             # HUB only: start it when you log on (the edge always starts it by hand)
+gitsi config set clip.auto on         # send every copy, not only on the hotkey (also from the tray menu)
+gitsi config set clip.hotkey ctrl+shift+alt+v
+gitsi config set clip.max_size_mb 50  # largest item sent or accepted (20 MB by default)
+```
+Text, images and files copied in Explorer travel; only the latest copy, for 10 minutes. Auto mode does not send what password
+managers mark as private.
+
 ## Status, diagnosis and updates
 ```powershell
 gitsi status                # at a glance: the hub and its version, the mailbox, the jobs and this folder's repo
@@ -219,7 +233,9 @@ the mailbox is used or when something is received; at most once an hour on the h
 | Mailbox items (inbox and outbox) | hub | after 14 days |
 | Finished jobs (folder and log) | hub | after 14 days; running ones never |
 | Partial `take` downloads | the receiving machine (edge or hub) | after 7 days (recent ones resume) |
-| `take -clip` copies | the receiving machine (edge or hub) | after 7 days |
+| `take -clip` copies and files received on the shared clipboard | the receiving machine (edge or hub) | after 7 days |
+| The shared clipboard's slot | hub | after 10 minutes |
+| `watch.log` (watch in the tray) | both | past 1 MiB it becomes `watch.log.1` |
 | `audit.log` | both | past 1 MiB it becomes `audit.log.1` |
 
 ```powershell
@@ -235,6 +251,7 @@ Nobody has to choose paths: the hub uses defaults under its home folder and **an
     repos\                          the repo bridge (<name>.git); created by the first share
     mailbox\                        the mailbox (inbox / outbox)
     jobs\                           background jobs
+    clip\                           the shared clipboard's slot (the latest copy, for 10 minutes)
     work\<repo>\                    each repo's working clone for run -repo (keeps ignored files)
 ```
 A hub that already keeps its repos elsewhere sets `gitsi config set repos_dir <path>` on the hub. The edge **discovers** the layout
@@ -300,7 +317,7 @@ also tests `send -clip` (it overwrites your session's clipboard). Contribution r
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) - current design decisions, by topic
 - [`docs/WORKFLOW.md`](docs/WORKFLOW.md) - the edge <-> hub <-> origin workflow
 - [`docs/WATCH.md`](docs/WATCH.md) - design of `gitsi watch` (hub notices and reactions)
-- [`docs/CLIP.md`](docs/CLIP.md) - design of the shared clipboard between hub and edge (planned)
+- [`docs/CLIP.md`](docs/CLIP.md) - the shared clipboard between hub and edge (design and behavior)
 - [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) - what gitsi does on a managed machine, for security reviewers
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) - planned improvements
 - [`CHANGELOG.md`](CHANGELOG.md) - release notes

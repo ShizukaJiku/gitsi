@@ -206,7 +206,7 @@ func servicePorts(cfg *config.Config) []int {
 func policyChecks(cfg *config.Config, rs *[]Result) {
 	p := cfg.Policy
 	var on []string
-	for name, v := range map[string]bool{"send": p.AllowSend, "take": p.AllowTake, "services": p.AllowServices, "exec": p.AllowExec} {
+	for name, v := range map[string]bool{"send": p.AllowSend, "take": p.AllowTake, "services": p.AllowServices, "exec": p.AllowExec, "clip": p.AllowClip} {
 		if v {
 			on = append(on, name)
 		}

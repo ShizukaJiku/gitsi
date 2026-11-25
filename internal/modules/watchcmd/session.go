@@ -1,0 +1,392 @@
+package watchcmd
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ShizukaJiku/gitsi/internal/cleanup"
+	"github.com/ShizukaJiku/gitsi/internal/clip"
+	"github.com/ShizukaJiku/gitsi/internal/clipboard"
+	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/desktop"
+	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/policy"
+)
+
+// childEnv marks the process 'watch -tray' starts detached: it is the one that stays in the tray.
+const childEnv = "GITSI_WATCH_TRAY"
+
+// lockName names the per-user lock: one watch per machine and user, in the tray or in a terminal.
+const lockName = "gitsi-watch"
+
+// Tray menu entries.
+const (
+	menuStatus = iota + 1
+	menuSend
+	menuAuto
+	menuLog
+	menuQuit
+)
+
+// ui is the part of the desktop watch uses (a fake in tests).
+type ui interface {
+	SetTooltip(string)
+	SetMenu([]desktop.MenuItem)
+	Notify(title, message string, warning bool)
+	Close()
+	Done() <-chan struct{}
+	WriteText(string) error
+}
+
+// Seams for tests: the desktop, the clipboard and the lock.
+var (
+	startUI = func(o desktop.Options) (ui, error, error) {
+		d, err := desktop.Start(o)
+		if err != nil {
+			return nil, nil, err
+		}
+		return d, d.HotkeyErr, nil
+	}
+	readText                   = desktop.ReadText
+	readClip  clipboard.Reader = clipboard.Read
+	writeClip clipboard.Writer = clipboard.Write
+	clipSeq                    = desktop.Seq
+	clipPriv                   = desktop.Private
+	lock                       = func() (func(), error) { return desktop.Lock(lockName) }
+)
+
+// session is one run of watch: its output (a terminal or the log file), its clipboard sharing and its tray.
+type session struct {
+	env    *module.Env
+	tray   bool
+	clipOn bool
+	out    io.Writer
+	log    *rotatingLog
+	sharer *clip.Sharer
+	ui     ui
+	cancel func()
+
+	mu        sync.Mutex
+	connected bool
+	last      string // the last clipboard line, for the tooltip
+}
+
+func newSession(env *module.Env, tray bool) (*session, error) {
+	s := &session{env: env, tray: tray, clipOn: policy.Check(env.Config.Policy, policy.Clip) == nil}
+	s.out = &syncWriter{w: env.Stdout}
+	if tray {
+		p, err := logPath()
+		if err != nil {
+			return nil, err
+		}
+		if s.log, err = openLog(p); err != nil {
+			return nil, err
+		}
+		s.out = s.log
+	}
+	if s.clipOn {
+		root, err := cleanup.ClipRoot()
+		if err != nil {
+			return nil, err
+		}
+		s.sharer = &clip.Sharer{
+			Read: s.read, Write: s.write, Seq: clipSeq, Private: clipPriv,
+			MaxSize: env.Config.Clip.MaxBytes(), FilesRoot: root,
+			Log:   s.clipLine,
+			Audit: s.audit,
+		}
+		s.sharer.SetAuto(env.Config.Clip.Auto)
+	}
+	return s, nil
+}
+
+// read reads the clipboard: a text directly (milliseconds), anything else through PowerShell (most of a second).
+func (s *session) read(ctx context.Context) (clipboard.Content, error) {
+	if t, ok, err := readText(); err == nil && ok {
+		if t == "" {
+			return clipboard.Content{}, clipboard.ErrEmpty
+		}
+		return clipboard.Content{Kind: clipboard.Text, Text: t}, nil
+	}
+	return readClip(ctx)
+}
+
+// write writes the clipboard: a text directly through the desktop window, anything else (or a text the direct way refuses)
+// through PowerShell.
+func (s *session) write(ctx context.Context, c clipboard.Content) error {
+	s.mu.Lock()
+	u := s.ui
+	s.mu.Unlock()
+	if u != nil && c.Kind == clipboard.Text && len(c.PNG) == 0 && len(c.Files) == 0 {
+		if err := u.WriteText(c.Text); err == nil {
+			return nil
+		}
+	}
+	return writeClip(ctx, c)
+}
+
+func (s *session) printf(format string, a ...any) {
+	fmt.Fprintf(s.out, "[%s] %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, a...))
+}
+
+// clipLine prints a clipboard line and keeps it for the tooltip.
+func (s *session) clipLine(format string, a ...any) {
+	line := fmt.Sprintf(format, a...)
+	s.printf("%s", line)
+	s.mu.Lock()
+	s.last = time.Now().Format("15:04") + " " + line
+	s.mu.Unlock()
+	s.refresh()
+}
+
+func (s *session) audit(action, detail string) { _ = policy.Audit(s.env.Config.Policy, action, detail) }
+
+func (s *session) quitHint() string {
+	if s.tray {
+		return "Quit it from the tray icon's menu."
+	}
+	return "Ctrl+C to quit."
+}
+
+// setConnected is told by the edge's client when a session starts or ends.
+func (s *session) setConnected(on bool) {
+	s.mu.Lock()
+	s.connected = on
+	s.mu.Unlock()
+	s.refresh()
+}
+
+// startUI starts the desktop when something needs it: the clipboard (hotkey and change listener) or the tray. Without either,
+// watch runs exactly as a plain terminal program.
+func (s *session) startUI(ctx context.Context) error {
+	if s.clipOn {
+		hk := desktop.HotkeyLabel(s.env.Config.Clip.HotkeyOrDefault())
+		how := hk + " sends what you copied"
+		if s.sharer.Auto() {
+			how = "every copy is sent (clip.auto)"
+		}
+		s.printf("clipboard shared: %s; what the other machine sends is pasted with Ctrl+V.", how)
+	} else if s.env.Config.Role != config.RoleHub {
+		s.printf("clipboard sharing is off (to share it: gitsi policy set clip on).")
+	}
+	if !s.clipOn && !s.tray {
+		return nil
+	}
+	o := desktop.Options{Tray: s.tray, Tooltip: s.tooltip(), Menu: s.menu(), OnMenu: func(id int) { go s.onMenu(ctx, id) }}
+	if s.clipOn {
+		o.Hotkey, o.Clipboard = s.env.Config.Clip.HotkeyOrDefault(), true
+		o.OnHotkey = func() { go func() { _ = s.sharer.Share(ctx, false) }() }
+		o.OnClipboard = func() { s.sharer.Changed(ctx) }
+	}
+	u, hotkeyErr, err := startUI(o)
+	if err != nil {
+		return fmt.Errorf("could not start the clipboard sharing or the tray: %w", err)
+	}
+	s.mu.Lock()
+	s.ui = u
+	s.mu.Unlock()
+	go func() {
+		select {
+		case <-u.Done(): // the window was closed from outside: watch stops with it
+			if s.cancel != nil {
+				s.cancel()
+			}
+		case <-ctx.Done():
+		}
+	}()
+	if s.clipOn && s.tray {
+		s.sharer.Notify = func(title, msg string) { u.Notify(title, msg, true) }
+	}
+	if hotkeyErr != nil {
+		s.printf("the hotkey does not work: %v", hotkeyErr)
+		u.Notify("gitsi: clipboard", "The hotkey does not work: "+hotkeyErr.Error(), true)
+	}
+	return nil
+}
+
+func (s *session) tooltip() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := "gitsi watch: " + s.state()
+	if s.last != "" {
+		t += "\n" + s.last
+	}
+	return t
+}
+
+// state describes the connection; the caller holds mu.
+func (s *session) state() string {
+	switch {
+	case s.env.Config.Role == config.RoleHub:
+		return "sharing the hub's clipboard"
+	case s.connected:
+		return "connected to the hub"
+	}
+	return "not connected (retrying)"
+}
+
+func (s *session) menu() []desktop.MenuItem {
+	s.mu.Lock()
+	state := s.state()
+	s.mu.Unlock()
+	items := []desktop.MenuItem{{ID: menuStatus, Label: "gitsi watch: " + state, Disabled: true}, {}}
+	if s.clipOn {
+		items = append(items,
+			desktop.MenuItem{ID: menuSend, Label: "Send the clipboard now\t" + desktop.HotkeyLabel(s.env.Config.Clip.HotkeyOrDefault())},
+			desktop.MenuItem{ID: menuAuto, Label: "Send every copy", Checked: s.sharer.Auto()})
+	}
+	if s.log != nil {
+		items = append(items, desktop.MenuItem{ID: menuLog, Label: "Open the log"})
+	}
+	return append(items, desktop.MenuItem{}, desktop.MenuItem{ID: menuQuit, Label: "Quit"})
+}
+
+// refresh updates the tooltip and the menu after a change.
+func (s *session) refresh() {
+	s.mu.Lock()
+	u := s.ui
+	s.mu.Unlock()
+	if u != nil {
+		u.SetTooltip(s.tooltip())
+		u.SetMenu(s.menu())
+	}
+}
+
+func (s *session) onMenu(ctx context.Context, id int) {
+	switch id {
+	case menuSend:
+		_ = s.sharer.Share(ctx, false)
+	case menuAuto:
+		on := !s.sharer.Auto()
+		s.sharer.SetAuto(on)
+		if err := saveAuto(on); err != nil {
+			s.printf("could not save clip.auto: %v", err)
+		}
+		s.printf("send every copy: %s", map[bool]string{true: "on", false: "off (only the hotkey sends)"}[on])
+		s.refresh()
+	case menuLog:
+		if s.log != nil {
+			_ = exec.Command("notepad.exe", s.log.path).Start()
+		}
+	case menuQuit:
+		s.printf("quitting from the tray menu.")
+		if s.cancel != nil {
+			s.cancel()
+		}
+	}
+}
+
+// saveAuto stores clip.auto in the configuration read again from disk: this process has been running for a while and its copy
+// may be older than what another command saved since.
+var saveAuto = func(on bool) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg.Clip.Auto = on
+	return cfg.Save()
+}
+
+func (s *session) close() {
+	s.mu.Lock()
+	u := s.ui
+	s.ui = nil
+	s.mu.Unlock()
+	if u != nil {
+		u.Close()
+	}
+	if s.log != nil {
+		s.log.Close()
+	}
+}
+
+// syncWriter serializes writes from several goroutines (the session, the hotkey, the reactions) so lines do not mix.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(p)
+}
+
+// logMaxSize is the size past which watch.log becomes watch.log.1 (nothing piles up).
+var logMaxSize int64 = 1 << 20
+
+// rotatingLog is where watch writes in the tray (there is no terminal).
+type rotatingLog struct {
+	mu   sync.Mutex
+	path string
+	f    *os.File
+}
+
+// logPath is %LOCALAPPDATA%\gitsi\watch.log.
+func logPath() (string, error) {
+	d, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "gitsi", "watch.log"), nil
+}
+
+func openLog(p string) (*rotatingLog, error) {
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return &rotatingLog{path: p, f: f}, nil
+}
+
+func (l *rotatingLog) Write(b []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f == nil {
+		return len(b), nil
+	}
+	if st, err := l.f.Stat(); err == nil && st.Size() >= logMaxSize {
+		l.f.Close()
+		_ = os.Remove(l.path + ".1")
+		_ = os.Rename(l.path, l.path+".1")
+		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			l.f = nil
+			return 0, err
+		}
+		l.f = f
+	}
+	return l.f.Write(b)
+}
+
+func (l *rotatingLog) Close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f != nil {
+		l.f.Close()
+		l.f = nil
+	}
+}
+
+// tail returns the last lines of the log (what the tray process said before it stopped).
+func tail(p string, n int) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
