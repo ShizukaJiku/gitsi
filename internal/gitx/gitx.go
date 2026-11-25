@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ShizukaJiku/gitsi/internal/fault"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // Runner runs git with arguments in a directory and returns stdout, stderr and the error.
@@ -22,7 +23,7 @@ func ExecRunner(ctx context.Context, dir string, args ...string) (string, string
 	cmd.Dir = dir
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
+	err := procx.Background(cmd).Run()
 	return out.String(), errb.String(), err
 }
 
@@ -35,7 +36,7 @@ func EnvRunner(vars ...string) Runner {
 		cmd.Env = append(os.Environ(), vars...)
 		var out, errb bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &errb
-		err := cmd.Run()
+		err := procx.Background(cmd).Run()
 		return out.String(), errb.String(), err
 	}
 }
@@ -66,7 +67,7 @@ func (g *Git) Passthrough(ctx context.Context, stdout, stderr io.Writer, args ..
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = g.Dir
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	if err := cmd.Run(); err != nil {
+	if err := procx.Background(cmd).Run(); err != nil {
 		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return nil

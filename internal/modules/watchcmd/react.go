@@ -14,6 +14,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/gitx"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
 )
 
@@ -30,7 +31,7 @@ func execSelf(ctx context.Context, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Stdin = strings.NewReader("")
-	out, err := cmd.CombinedOutput()
+	out, err := procx.Background(cmd).CombinedOutput()
 	return string(out), err
 }
 

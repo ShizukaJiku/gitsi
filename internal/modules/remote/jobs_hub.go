@@ -89,7 +89,10 @@ func startScript(jobsDir, id, cwd, command string) string {
 		`[IO.File]::WriteAllText("$d/runner.ps1", [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('` + b64(runnerScript(d)) + `')))`,
 		`Set-Content -LiteralPath "$d/meta" -Value '` + time.Now().Format(time.RFC3339) + `|` + exeName(command) + `|` + cwd + `'`,
 		`$cl = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ("$d/runner.ps1").Replace('/', '\') + '"'`,
-		`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cl }`,
+		// ShowWindow = 0 (SW_HIDE): a process WMI starts gets its own console, and without this it shows up as a window on the
+		// desktop of whoever is logged on to the hub.
+		`$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }`,
+		`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cl; ProcessStartupInformation = $si }`,
 		`if ($r.ReturnValue -ne 0) { throw ("could not start the job (WMI " + $r.ReturnValue + ")") }`,
 		`Set-Content -LiteralPath "$d/pid" -Value $r.ProcessId`,
 		// The start time identifies the process even if its PID is reused (e.g. after restarting the hub): see stateExpr.

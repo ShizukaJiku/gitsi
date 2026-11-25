@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // The block `gitsi setup completion` leaves in the profile works in the real PowerShell: TabExpansion2 (what Tab does) asks the
@@ -56,7 +58,7 @@ func TestTabCompletionInRealPowerShell(t *testing.T) {
 		for k, v := range cases {
 			want[k] = v
 		}
-		cmd := exec.Command(sh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script.String())
+		cmd := procx.Background(exec.Command(sh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script.String()))
 		cmd.Env = append(os.Environ(), "USERPROFILE="+home, "HOME="+home)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

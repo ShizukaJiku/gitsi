@@ -11,6 +11,7 @@ import (
 
 	"github.com/ShizukaJiku/gitsi/internal/install"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // FSSource is the hub's real state: the published binary, the mailbox's outbox, the jobs folder and the bridge repos.
@@ -51,7 +52,7 @@ func (s *FSSource) Binary() (string, string, error) {
 func binaryVersion(path string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version").Output()
+	out, err := procx.Background(exec.CommandContext(ctx, path, "version")).Output()
 	if err != nil {
 		return ""
 	}

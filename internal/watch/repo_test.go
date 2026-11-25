@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 const (
@@ -88,7 +90,7 @@ func TestFSSourceReadsLooseAndPackedHeads(t *testing.T) {
 	dir := t.TempDir()
 	repos := filepath.Join(dir, "repos")
 	git := func(d string, args ...string) string {
-		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		cmd := procx.Background(exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...))
 		cmd.Dir = d
 		out, err := cmd.CombinedOutput()
 		if err != nil {

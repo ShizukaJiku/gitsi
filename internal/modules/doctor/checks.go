@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -54,7 +55,7 @@ func SystemDeps() Deps {
 		Output: func(ctx context.Context, name string, args ...string) (string, error) {
 			cmd := exec.CommandContext(ctx, name, args...)
 			cmd.Env = winps.Env(os.Environ()) // the hub's diagnostics run powershell.exe
-			b, err := cmd.CombinedOutput()
+			b, err := procx.Background(cmd).CombinedOutput()
 			return string(b), err
 		},
 		Dial: func(addr string, timeout time.Duration) error {

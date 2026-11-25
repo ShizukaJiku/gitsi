@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"io"
 	"os"
 	"os/exec"
@@ -15,7 +14,9 @@ import (
 	"time"
 
 	"github.com/ShizukaJiku/gitsi/internal/fault"
+	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // The hub's host key fingerprint lets the edge know it talks to the hub and not to another machine. Without it, ssh accepts the
@@ -63,7 +64,7 @@ func SystemScanner(ctx context.Context, host string, port int) (string, error) {
 	args = append(args, host)
 	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(cctx, "ssh-keyscan", args...).Output() // stdout: the key; stderr: comments
+	out, err := procx.Background(exec.CommandContext(cctx, "ssh-keyscan", args...)).Output() // stdout: the key; stderr: comments
 	if err != nil && len(out) == 0 {
 		return "", fmt.Errorf("ssh-keyscan: %w", err)
 	}

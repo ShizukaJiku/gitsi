@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ShizukaJiku/gitsi/internal/install"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -210,7 +211,7 @@ const UserPathKey = `HKCU:\Environment`
 // AddToUserPath runs UserPathScript with the system's powershell. It returns true when it added the folder (false when it was
 // already there).
 func AddToUserPath(ctx context.Context, key, dir string) (bool, error) {
-	out, err := winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", UserPathScript(key, dir)).CombinedOutput()
+	out, err := procx.Background(winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", UserPathScript(key, dir))).CombinedOutput()
 	s := strings.TrimSpace(string(out))
 	switch {
 	case err != nil:
@@ -230,7 +231,7 @@ type Runner func(ctx context.Context, docker string, args ...string) (string, er
 
 // ExecRunner is the real Runner.
 func ExecRunner(ctx context.Context, docker string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, docker, args...).CombinedOutput()
+	out, err := procx.Background(exec.CommandContext(ctx, docker, args...)).CombinedOutput()
 	return string(out), err
 }
 

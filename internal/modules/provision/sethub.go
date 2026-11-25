@@ -18,6 +18,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/install"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/safe"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
@@ -186,7 +187,7 @@ func (s realSystem) Run(ctx context.Context, name string, args ...string) (strin
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = winps.Env(os.Environ()) // setup hub runs powershell.exe, often from a PowerShell 7 console
 	cmd.Stdout, cmd.Stderr = &buf, &buf
-	err := cmd.Run()
+	err := procx.Background(cmd).Run()
 	if err != nil {
 		return buf.String(), fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(buf.String()))
 	}

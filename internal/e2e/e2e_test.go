@@ -18,6 +18,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/hubclient"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/proto"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
@@ -52,7 +53,7 @@ func (p *procStream) Close() error {
 }
 
 func (t procTransport) Stream(ctx context.Context, _ string) (transport.Stream, error) {
-	cmd := exec.CommandContext(ctx, t.bin, "serve", "--stdio")
+	cmd := procx.Background(exec.CommandContext(ctx, t.bin, "serve", "--stdio"))
 	cmd.Env = append(os.Environ(), "USERPROFILE="+t.home, "HOME="+t.home)
 	in, _ := cmd.StdinPipe()
 	out, _ := cmd.StdoutPipe()
@@ -135,7 +136,7 @@ func (t psTransport) Stream(ctx context.Context, command string) (transport.Stre
 		return nil, errors.New("launch form disabled in the test")
 	}
 	*t.used = append(*t.used, command)
-	cmd := winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command)
+	cmd := procx.Background(winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command))
 	cmd.Env = append(os.Environ(), "USERPROFILE="+t.home, "HOME="+t.home)
 	in, _ := cmd.StdinPipe()
 	out, _ := cmd.StdoutPipe()

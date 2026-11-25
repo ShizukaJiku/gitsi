@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // TestHelperProcessSleep is the tests' "remote process": it only does something when another test starts it.
@@ -18,7 +20,7 @@ func TestHelperProcessSleep(t *testing.T) {
 
 // Close is called at once by cancellation, the ACK reader and the command's defer: it must be safe and leave the process ended.
 func TestStreamCloseIsSafeFromManyGoroutines(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcessSleep$")
+	cmd := procx.Background(exec.Command(os.Args[0], "-test.run=^TestHelperProcessSleep$"))
 	cmd.Env = append(os.Environ(), "GITSI_HELPER_SLEEP=1")
 	in, _ := cmd.StdinPipe()
 	out, _ := cmd.StdoutPipe()

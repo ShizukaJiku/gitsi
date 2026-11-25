@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -20,7 +21,7 @@ import (
 
 func runPS(t *testing.T, script string) string {
 	t.Helper()
-	out, err := winps.Command(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	out, err := procx.Background(winps.Command(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -66,14 +67,14 @@ func startTicks(t *testing.T, pid int) string {
 }
 
 func alive(pid int) bool {
-	out, _ := winps.Command(context.Background(), "-NoProfile", "-Command", "[bool](Get-Process -Id "+strconv.Itoa(pid)+" -ErrorAction SilentlyContinue)").Output()
+	out, _ := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "[bool](Get-Process -Id "+strconv.Itoa(pid)+" -ErrorAction SilentlyContinue)")).Output()
 	return strings.TrimSpace(string(out)) == "True"
 }
 
 // A PID reused by another process (e.g. after restarting the hub) is not the job: it does not show as running and stop does NOT kill it.
 func TestReusedPIDIsNotTheJobAndStopDoesNotKillIt(t *testing.T) {
 	needWindows(t)
-	other := winps.Command(context.Background(), "-NoProfile", "-Command", "Start-Sleep 60")
+	other := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "Start-Sleep 60"))
 	if err := other.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestReusedPIDIsNotTheJobAndStopDoesNotKillIt(t *testing.T) {
 func TestJobWithoutStartTimeIsNotRunning(t *testing.T) {
 	needWindows(t)
 	jobs := t.TempDir()
-	ps := winps.Command(context.Background(), "-NoProfile", "-Command", "Start-Sleep 60")
+	ps := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "Start-Sleep 60"))
 	if err := ps.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestStartRecordsStartTimeAndStopStillWorks(t *testing.T) {
 	pidB, _ := os.ReadFile(filepath.Join(jobs, "eeeeeeee", "pid"))
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(pidB)))
 	t.Cleanup(func() {
-		exec.Command("taskkill.exe", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+		procx.Background(exec.Command("taskkill.exe", "/PID", strconv.Itoa(pid), "/T", "/F")).Run()
 		// Windows releases the ended process's out.log a moment later: wait before the temporary folder is removed
 		log := filepath.Join(jobs, "eeeeeeee", "out.log")
 		for i := 0; i < 50; i++ {

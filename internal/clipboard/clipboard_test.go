@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -40,8 +41,8 @@ func TestReadRealClipboard(t *testing.T) {
 		t.Skip("opt-in: modifies the real clipboard (GITSI_REAL_CLIPBOARD=1)")
 	}
 	set := func(script string) error {
-		return winps.Command(context.Background(), "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
-			"Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "+script).Run()
+		return procx.Background(winps.Command(context.Background(), "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
+			"Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "+script)).Run()
 	}
 	if err := set(`$b = New-Object Drawing.Bitmap 8,6; $b.SetPixel(1,1,[Drawing.Color]::Red); [Windows.Forms.Clipboard]::SetImage($b)`); err != nil {
 		t.Skipf("no clipboard available in this session: %v", err)
@@ -114,7 +115,7 @@ func TestWriteRealClipboardRoundTrip(t *testing.T) {
 		t.Fatalf("text: %+v %v", got, err)
 	}
 	// a 2x2 image created by .NET itself, to have a valid PNG
-	out, err := winps.Command(context.Background(), "-NoProfile", "-Command", `Add-Type -AssemblyName System.Drawing; $b = New-Object Drawing.Bitmap 2,2; $m = New-Object IO.MemoryStream; $b.Save($m, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($m.ToArray())`).Output()
+	out, err := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", `Add-Type -AssemblyName System.Drawing; $b = New-Object Drawing.Bitmap 2,2; $m = New-Object IO.MemoryStream; $b.Save($m, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($m.ToArray())`)).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +149,8 @@ func TestWriteRealClipboardFilesAndImageWithFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	drop := func() string {
-		out, err := winps.Command(context.Background(), "-NoProfile", "-STA", "-Command",
-			`Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding = [Text.Encoding]::UTF8; ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') + '#' + [Windows.Forms.Clipboard]::ContainsImage()`).Output()
+		out, err := procx.Background(winps.Command(context.Background(), "-NoProfile", "-STA", "-Command",
+			`Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding = [Text.Encoding]::UTF8; ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') + '#' + [Windows.Forms.Clipboard]::ContainsImage()`)).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,7 +159,7 @@ func TestWriteRealClipboardFilesAndImageWithFile(t *testing.T) {
 	if got := drop(); got != f+"|"+sub+"#False" {
 		t.Fatalf("file list: %q", got)
 	}
-	out, _ := winps.Command(context.Background(), "-NoProfile", "-Command", `Add-Type -AssemblyName System.Drawing; $b = New-Object Drawing.Bitmap 2,2; $m = New-Object IO.MemoryStream; $b.Save($m, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($m.ToArray())`).Output()
+	out, _ := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", `Add-Type -AssemblyName System.Drawing; $b = New-Object Drawing.Bitmap 2,2; $m = New-Object IO.MemoryStream; $b.Save($m, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($m.ToArray())`)).Output()
 	png, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(string(out)))
 	img := dir + `\capture.png`
 	os.WriteFile(img, png, 0o644)

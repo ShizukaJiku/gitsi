@@ -12,6 +12,7 @@ import (
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -112,7 +113,7 @@ func TestShellsReadsTheRealProfilePathAndPolicy(t *testing.T) {
 	if len(found) == 0 || found[0].Name != "Windows PowerShell" {
 		// An account without a resolvable Documents folder (e.g. a service account) gets an empty $PROFILE: there is nowhere to
 		// install completion and shells() rightly leaves that PowerShell out. Anything else is a defect.
-		cmd := exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserAllHosts")
+		cmd := procx.Background(exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserAllHosts"))
 		cmd.Env = winps.Env(os.Environ())
 		out, err := cmd.CombinedOutput()
 		if err == nil && strings.TrimSpace(string(out)) == "" {

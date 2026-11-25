@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/ShizukaJiku/gitsi/internal/install"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -24,7 +25,7 @@ func needWindows(t *testing.T) {
 
 func ps(t *testing.T, script string) string {
 	t.Helper()
-	out, err := winps.Command(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	out, err := procx.Background(winps.Command(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -37,7 +38,7 @@ func TestUserPathKeepsVariablesAndDoesNotDuplicate(t *testing.T) {
 	needWindows(t)
 	key := fmt.Sprintf(`HKCU:\Software\gitsi-test-path-%d`, os.Getpid())
 	t.Cleanup(func() {
-		winps.Command(context.Background(), "-NoProfile", "-Command", "Remove-Item -LiteralPath '"+key+"' -Recurse -Force -ErrorAction SilentlyContinue").Run()
+		procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "Remove-Item -LiteralPath '"+key+"' -Recurse -Force -ErrorAction SilentlyContinue")).Run()
 	})
 	ps(t, "New-Item -Path '"+key+"' -Force | Out-Null; Set-ItemProperty -LiteralPath '"+key+"' -Name Path -Type ExpandString -Value '%USERPROFILE%\\bin;C:\\other'")
 

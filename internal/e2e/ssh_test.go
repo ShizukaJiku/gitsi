@@ -15,6 +15,7 @@ import (
 
 	"github.com/ShizukaJiku/gitsi/internal/app"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
@@ -239,9 +240,9 @@ func TestThroughRealOpenSSH(t *testing.T) {
 		if os.Getenv("GITSI_REAL_CLIPBOARD") != "1" {
 			t.Skip("opt-in: changes the real clipboard (GITSI_REAL_CLIPBOARD=1)")
 		}
-		set := winps.Command(context.Background(), "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
+		set := procx.Background(winps.Command(context.Background(), "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
 			"Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "+
-				"$b = New-Object Drawing.Bitmap 40,30; $b.SetPixel(3,3,[Drawing.Color]::Blue); [Windows.Forms.Clipboard]::SetImage($b)")
+				"$b = New-Object Drawing.Bitmap 40,30; $b.SetPixel(3,3,[Drawing.Color]::Blue); [Windows.Forms.Clipboard]::SetImage($b)"))
 		if err := set.Run(); err != nil {
 			t.Skipf("no clipboard available: %v", err)
 		}
@@ -304,7 +305,7 @@ func TestThroughRealOpenSSH(t *testing.T) {
 		repo := filepath.Join(dir, "proy-e2e")
 		os.MkdirAll(repo, 0o755)
 		git := func(args ...string) {
-			c := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+			c := procx.Background(exec.Command("git", append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...))
 			if out, err := c.CombinedOutput(); err != nil {
 				t.Fatalf("git %v: %v %s", args, err, out)
 			}

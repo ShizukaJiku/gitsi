@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ShizukaJiku/gitsi/internal/fault"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // SSHExec implements Transport by running the system's ssh.exe.
@@ -136,7 +137,7 @@ func (s *SSHExec) Run(ctx context.Context, command string) (Result, error) {
 	cmd := exec.CommandContext(ctx, s.binary(), s.runArgs(command)...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
+	err := procx.Background(cmd).Run()
 	res := Result{Stdout: out.String(), Stderr: errb.String()}
 	defer func() { s.trace("ssh", command, start, fmt.Sprintf("exit %d", res.ExitCode)) }()
 	var ee *exec.ExitError
@@ -195,7 +196,7 @@ func (s *SSHExec) Stream(ctx context.Context, command string) (Stream, error) {
 	}
 	errb := &lockedBuffer{}
 	cmd.Stderr = errb
-	if err := cmd.Start(); err != nil {
+	if err := procx.Background(cmd).Start(); err != nil {
 		return nil, err
 	}
 	return &sshStream{cmd: cmd, in: in, out: out, stderr: errb, s: s}, nil
@@ -232,7 +233,7 @@ func (s *SSHExec) Forward(ctx context.Context, forwards []Forward) (Tunnel, erro
 	cmd := exec.CommandContext(ctx, s.binary(), args...)
 	errb := &lockedBuffer{}
 	cmd.Stderr = errb
-	if err := cmd.Start(); err != nil {
+	if err := procx.Background(cmd).Start(); err != nil {
 		return nil, err
 	}
 	return &sshTunnel{cmd: cmd, stderr: errb, s: s}, nil
@@ -272,7 +273,7 @@ var opensshVersionRe = regexp.MustCompile(`OpenSSH_(?:for_Windows_)?(\d+)\.(\d+)
 
 // sshVersion runs `<ssh> -V` (it prints to stderr). A variable so tests do not depend on the installed OpenSSH.
 var sshVersion = func(ctx context.Context, bin string) string {
-	out, _ := exec.CommandContext(ctx, bin, "-V").CombinedOutput()
+	out, _ := procx.Background(exec.CommandContext(ctx, bin, "-V")).CombinedOutput()
 	return string(out)
 }
 
@@ -288,7 +289,7 @@ func (s *SSHExec) Fetch(ctx context.Context, remotePath, localPath string) error
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	start := time.Now()
-	runErr := cmd.Run()
+	runErr := procx.Background(cmd).Run()
 	s.trace("scp", remotePath+" -> "+localPath, start, map[bool]string{true: "ok", false: "failed"}[runErr == nil])
 	if err := runErr; err != nil {
 		if fe := s.classify(errb.String()); fe != nil {
@@ -308,7 +309,7 @@ func (s *SSHExec) Exec(ctx context.Context, command string, stdout, stderr io.Wr
 	cmd := exec.CommandContext(ctx, s.binary(), s.runArgs(command)...)
 	errb := &lockedBuffer{}
 	cmd.Stdout, cmd.Stderr = stdout, io.MultiWriter(stderr, errb) // live for the user and a copy to classify
-	err = cmd.Run()
+	err = procx.Background(cmd).Run()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		if ee.ExitCode() == 255 { // ssh itself failed (network, key, host key), not the remote command

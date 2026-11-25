@@ -15,6 +15,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/policy"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
@@ -62,7 +63,7 @@ func TestDockerCommandEndToEndWithFakes(t *testing.T) {
 
 	key := fmt.Sprintf(`HKCU:\Software\gitsi-test-dockercmd-%d`, os.Getpid())
 	t.Cleanup(func() {
-		winps.Command(context.Background(), "-NoProfile", "-Command", "Remove-Item -LiteralPath '"+key+"' -Recurse -Force -ErrorAction SilentlyContinue").Run()
+		procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "Remove-Item -LiteralPath '"+key+"' -Recurse -Force -ErrorAction SilentlyContinue")).Run()
 	})
 	var calls []string
 	m := mod{pathKey: key, run: func(_ context.Context, docker string, args ...string) (string, error) {

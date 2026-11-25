@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
@@ -38,7 +39,7 @@ func (h *psHub) Run(ctx context.Context, cmd string) (transport.Result, error) {
 	if cmd == "echo gitsi-ok" {
 		return transport.Result{Stdout: "gitsi-ok\r\n"}, nil
 	}
-	c := winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", cmd)
+	c := procx.Background(winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", cmd))
 	c.Env = append(os.Environ(), "ProgramData="+h.dir, "USERPROFILE="+h.dir)
 	var out, errb bytes.Buffer
 	c.Stdout, c.Stderr = &out, &errb
@@ -62,7 +63,7 @@ var adminCache = map[string]bool{}
 func hubAuthFile(t *testing.T, dir string) string {
 	isAdmin, ok := adminCache["v"]
 	if !ok {
-		out, err := winps.Command(context.Background(), "-NoProfile", "-Command", "(whoami /groups) -match 'S-1-5-32-544' | Measure-Object | ForEach-Object Count").Output()
+		out, err := procx.Background(winps.Command(context.Background(), "-NoProfile", "-Command", "(whoami /groups) -match 'S-1-5-32-544' | Measure-Object | ForEach-Object Count")).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -344,7 +345,7 @@ func (f runFunc) Forward(context.Context, []transport.Forward) (transport.Tunnel
 
 // runScript runs a script without the login check.
 func (h *psHub) runScript(ctx context.Context, cmd string) (transport.Result, error) {
-	c := winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", cmd)
+	c := procx.Background(winps.Command(ctx, "-NoProfile", "-NonInteractive", "-Command", cmd))
 	c.Env = append(os.Environ(), "ProgramData="+h.dir, "USERPROFILE="+h.dir)
 	var out, errb bytes.Buffer
 	c.Stdout, c.Stderr = &out, &errb

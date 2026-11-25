@@ -14,13 +14,14 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := procx.Background(exec.Command("git", args...))
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -102,7 +103,7 @@ type localHub struct{ exec string }
 
 func (h *localHub) Run(ctx context.Context, script string) (transport.Result, error) {
 	// like the real transport: a non-zero exit code goes in the result, it is not a transport error
-	out, err := winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	out, err := procx.Background(winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)).CombinedOutput()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		return transport.Result{Stdout: string(out), ExitCode: ee.ExitCode()}, nil

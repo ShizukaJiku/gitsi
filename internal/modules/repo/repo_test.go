@@ -3,7 +3,6 @@ package repo
 import (
 	"bytes"
 	"context"
-	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"os"
 	"os/exec"
 	"path"
@@ -12,12 +11,14 @@ import (
 	"testing"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 func gitCmd(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := procx.Background(exec.Command("git", args...))
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

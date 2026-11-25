@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
 )
 
@@ -50,7 +51,7 @@ func TestFetchHereWithRealGit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
 	tmp := filepath.ToSlash(t.TempDir())
 	git := func(d string, args ...string) string {
-		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		cmd := procx.Background(exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...))
 		cmd.Dir = d
 		out, err := cmd.CombinedOutput()
 		if err != nil {

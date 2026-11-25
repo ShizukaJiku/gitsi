@@ -12,6 +12,7 @@ import (
 
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 )
 
@@ -237,7 +238,7 @@ func RotateKey(ctx context.Context, d KeyDeps, cfg *config.Config, o KeyOptions)
 }
 
 func sshKeygen(ctx context.Context, path string) error {
-	out, err := exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", path, "-C", "gitsi").CombinedOutput()
+	out, err := procx.Background(exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", path, "-C", "gitsi")).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ShizukaJiku/gitsi/internal/fsx"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -70,7 +71,7 @@ var shells = func(ctx context.Context) []Shell {
 		cmd := exec.CommandContext(ctx, s.exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
 			"$PROFILE.CurrentUserAllHosts; [string](Get-ExecutionPolicy)")
 		cmd.Env = winps.Env(os.Environ()) // each PowerShell with its own modules, even when gitsi runs from the other one
-		b, err := cmd.Output()
+		b, err := procx.Background(cmd).Output()
 		// two lines: the profile path (it may have spaces) and the policy
 		text := strings.TrimSpace(strings.ReplaceAll(string(b), "\r", ""))
 		i := strings.LastIndex(text, "\n")

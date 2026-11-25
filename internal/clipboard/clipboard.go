@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/winps"
 )
 
@@ -94,7 +95,7 @@ func Parse(out string) (Content, error) {
 
 // Read is the real Reader: PowerShell in STA mode (the Windows clipboard requires it).
 func Read(ctx context.Context) (Content, error) {
-	out, err := winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", script).Output()
+	out, err := procx.Background(winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", script)).Output()
 	if err != nil {
 		return Content{}, fmt.Errorf("could not read the clipboard: %w", err)
 	}
@@ -148,7 +149,7 @@ func Write(ctx context.Context, c Content) error {
 	}
 	cmd := winps.Command(ctx, "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", writeScript)
 	cmd.Stdin = strings.NewReader(in)
-	out, err := cmd.CombinedOutput()
+	out, err := procx.Background(cmd).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "OK") {
 		return fmt.Errorf("could not write to the clipboard: %v %s", err, strings.TrimSpace(string(out)))
 	}

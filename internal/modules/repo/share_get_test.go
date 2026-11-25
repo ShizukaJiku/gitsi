@@ -13,6 +13,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/module"
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 )
 
@@ -151,7 +152,7 @@ func TestShareThenGetRoundTrip(t *testing.T) {
 }
 
 func gitxOut(dir string, args ...string) (string, error) {
-	c := exec.Command("git", args...)
+	c := procx.Background(exec.Command("git", args...))
 	c.Dir = dir
 	b, err := c.Output()
 	return strings.TrimSpace(string(b)), err

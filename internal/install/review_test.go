@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ShizukaJiku/gitsi/internal/procx"
 )
 
 // TestHelperProcess is not a test: it is the "executable in use" of the tests below (a copy of the test binary is started and
@@ -42,7 +44,7 @@ func copyTo(t *testing.T, src, dst string) {
 // runFrom starts the executable dst and leaves it running until the end of the test.
 func runFrom(t *testing.T, dst string) {
 	t.Helper()
-	c := exec.Command(dst, "-test.run=^TestHelperProcess$")
+	c := procx.Background(exec.Command(dst, "-test.run=^TestHelperProcess$"))
 	c.Env = append(os.Environ(), "GITSI_INSTALL_HELPER=1")
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
