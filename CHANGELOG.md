@@ -3,6 +3,24 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-25
+
+### Added
+- The tray menu of `watch -tray` covers daily use without commands (`docs/TRAY.md`): the mailbox (take to the clipboard or to
+  `Downloads\gitsi`, view a text, discard after confirming, send what you copied), the repos' working folders (state, sync,
+  publish, get a repo from the hub into a folder you pick, open the folder or a terminal), the hub's services (open and close
+  tunnels, closed with the menu), jobs (output, stop), the edges and publishing a version (hub), `gitsi check`, the settings and
+  the optional features, which are turned on after explaining them and asking. Lists are read in the background, so the menu
+  opens at once.
+- `repo share`, `repo get` and `repo sync` record the working folder in `~/.gitsi/workdirs.json` for the tray.
+- `gitsi --json repo list`.
+
+### Changed
+- The tray icon and the executable's icon are gitsi's own mark instead of the generic application icon; the tray's has a dot for
+  the state (connected, retrying, hub). The tray menu's entries are drawn as in the design (a two-line title, glyphs, a grey
+  right-hand column, the mailbox's count as a badge) in Windows' dark or light theme.
+- "Send every copy" moved to the tray menu's Settings; "Send the clipboard now" is now "Send what I copied".
+
 ## [1.3.1] - 2026-11-25
 
 ### Fixed
