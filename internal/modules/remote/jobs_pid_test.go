@@ -149,9 +149,11 @@ func TestStartRecordsStartTimeAndStopStillWorks(t *testing.T) {
 	if out := runPS(t, stopScript(jobs, "eeeeeeee")); !strings.Contains(out, "STOPPED") {
 		t.Fatalf("%s", out)
 	}
-	time.Sleep(500 * time.Millisecond)
-	if alive(pid) {
-		t.Fatal("stop must end the job")
+	// Windows ends the process a moment after stop returns; a slow machine (CI) takes longer than a fixed wait allowed.
+	for deadline := time.Now().Add(10 * time.Second); alive(pid); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("stop must end the job")
+		}
 	}
 	for _, j := range parseJobs(runPS(t, listScript(jobs))) {
 		if j.ID == "eeeeeeee" && (j.State != "exited" || j.Exit != "137") {
