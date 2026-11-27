@@ -90,6 +90,7 @@ also completes `gitsi take -l<Tab>`. If the execution policy does not allow load
 |---|---|---|
 | `setup` | prepare the machine and set its role | `edge`, `hub`, `key` (change the edge's key without cutting access), `completion` (Tab in PowerShell) |
 | `repo` | Git repos through the bridge | `share` `get` `list` `sync` `status` `publish` |
+| `mirror` | origin branches the edge keeps mirrored on the bridge | `add` `ls` `rm` `sync` |
 | `svc` | hub services through `-L` tunnels | `add` `rm` `ls` `up` |
 | `job` | long jobs on the hub | `start` `ls` `logs` `stop` `get` |
 | (top level) | | `send` `take` (mailbox, on both machines), `status`, `check` (`--active`), `config`, `run`, `update`, `policy`, `watch` (+ `edges` on the hub), `clean`, `docker` |
@@ -118,6 +119,21 @@ that would be lost, asks before replacing commits it did not publish, and never 
 `develop`, `release/*`...). The PR goes to the shared branch yours comes from; `-base <branch>` chooses another.
 
 The full cycle (edge -> hub -> origin) is in [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
+## Guide: following origin branches (`mirror`)
+The hub does not reach the origin, so the edge keeps the branches the hub must follow (the team's `development`, `main`...)
+mirrored on the bridge. Only the edge decides what is followed, and nothing is merged or touched: the mirror lives in hidden refs
+of the bridge repo (`refs/gitsi/mirror/<branch>`), apart from the branches shared with `sync`.
+```powershell
+gitsi mirror add app https://github.com/acme/app.git -branch development   # EDGE: follow a branch (repeat -branch for more)
+gitsi mirror add -list repos.txt     # EDGE: several, one "<name> <origin-url> <branch>..." per line; shows them and asks
+gitsi mirror sync                    # EDGE: bring what changed now (only the branches whose tip moved travel)
+gitsi mirror ls                      # EDGE: what it follows, the last check and the last error of each
+gitsi mirror rm app [-branch dev]    # EDGE: stop following it (the bridge repo stays)
+```
+The first `add` seeds the edge's copy from the bridge, so only what the bridge lacks comes from the origin. Toward the origin git
+never asks anything: an expired credential is an error of that repo, and the others go on. Origin URLs are `https://`, `ssh://` or
+`user@host:path`.
 
 ## Guide: mailbox for files, folders, text and images (opt-in)
 The hub never pushes to the edge: everything goes through a mailbox on the hub and the edge starts it. Transfers resume and are

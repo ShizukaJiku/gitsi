@@ -139,7 +139,7 @@ func TestHelpIsGroupedAndFilteredByRole(t *testing.T) {
 			t.Errorf("the edge's help must not show %q:\n%s", hidden, out)
 		}
 	}
-	if lines := strings.Count(out, "\n"); lines > 22 {
+	if lines := strings.Count(out, "\n"); lines > 23 {
 		t.Errorf("the main help must be short, it has %d lines:\n%s", lines, out)
 	}
 

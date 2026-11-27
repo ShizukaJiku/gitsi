@@ -77,6 +77,7 @@ internal/
   modules/
     provision        setup edge | hub | key, config      (OpenSSH, firewall, keys, ~/.ssh/config)
     repo             share get sync publish list status (get on the hub: working clone of the local bridge)
+    mirrorcmd        mirror add ls rm sync (edge)       (origin branches into the bridge's hidden refs/gitsi/mirror/*)
     drop             send take (both roles)             (mailbox: files, folders, text, clipboard)
     services         svc add rm ls up                    (-L tunnels in the foreground)
     remote           run, job start ls logs stop get     (jobs.go: commands; jobs_hub.go: scripts that run on the hub)
@@ -103,6 +104,7 @@ and registering it in `app`; the core is not touched.
 ```
 setup   edge | hub | key | completion    prepare the machine, set its role, change the key, Tab in PowerShell
 repo    share get list sync status publish
+mirror  add ls rm sync
 svc     add rm ls up
 job     start ls logs stop get
 check   [--active]                       diagnosis

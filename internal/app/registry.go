@@ -13,12 +13,13 @@ import (
 
 // Command groups: each one is a workflow. A command belongs to a group through module.Command.Group.
 var (
-	groupOrder   = []string{"setup", "repo", "svc", "job"}
+	groupOrder   = []string{"setup", "repo", "mirror", "svc", "job"}
 	groupSummary = map[string]string{
-		"setup": "Set this machine up as an edge or a hub and see its role",
-		"repo":  "Git repos through the hub's bridge",
-		"svc":   "Hub services through local tunnels (-L)",
-		"job":   "Long-running background jobs on the hub",
+		"setup":  "Set this machine up as an edge or a hub and see its role",
+		"repo":   "Git repos through the hub's bridge",
+		"mirror": "Origin branches the edge mirrors on the bridge",
+		"svc":    "Hub services through local tunnels (-L)",
+		"job":    "Long-running background jobs on the hub",
 	}
 )
 
