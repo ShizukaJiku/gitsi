@@ -109,6 +109,8 @@ func settings() []setting {
 			func(c *config.Config, v string) error { return setOnOff(&c.Watch.Report, v) }, false, false},
 		{"watch.auto_fetch", "(edge) watch fetches (git fetch) its folder's repo when it changes on the hub: on | off", func(c *config.Config) string { return onOff(c.Watch.AutoFetch) },
 			func(c *config.Config, v string) error { return setOnOff(&c.Watch.AutoFetch, v) }, false, false},
+		{"watch.mirror", "(edge) watch keeps the origin branches mirrored on the bridge up to date: on | off", func(c *config.Config) string { return onOff(c.Watch.Mirror) },
+			func(c *config.Config, v string) error { return setOnOff(&c.Watch.Mirror, v) }, false, false},
 		{"clip.hotkey", "hotkey that sends what is copied to the other machine (e.g. ctrl+shift+alt+c)", func(c *config.Config) string { return c.Clip.HotkeyOrDefault() },
 			func(c *config.Config, v string) error {
 				if _, _, err := desktop.ParseHotkey(v); err != nil {

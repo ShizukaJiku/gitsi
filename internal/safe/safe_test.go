@@ -62,3 +62,28 @@ func TestFileName(t *testing.T) {
 		}
 	}
 }
+
+// An origin URL comes from the edge's user, or from a file the hub suggested: git must never read it as an option, run a
+// transport helper (ext::) or reach something local (file://, a path) that would then travel to the hub.
+func TestGitURL(t *testing.T) {
+	for _, ok := range []string{
+		"https://github.com/acme/app.git", "https://gitlab.example.com/group/sub/app", "https://git.example.com:8443/a/b.git",
+		"https://user@github.com/acme/app.git", "ssh://git@github.com/acme/app.git", "ssh://git@host.example:2222/a/b.git",
+		"git@github.com:acme/app.git", "git@ssh.dev.azure.com:v3/org/project/repo",
+	} {
+		if err := GitURL(ok); err != nil {
+			t.Errorf("%q should be valid: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		"", "-u", "--upload-pack=calc", "ext::sh -c calc", "fd::17", "file:///C:/repo", "file://server/share",
+		`C:\repo`, "C:/repo", "/srv/repo", "./repo", `\server\share\repo`, "http://github.com/acme/app.git",
+		"https://-oProxy/a", "https:///a", "https://github.com", "https://github.com/", "ssh://-oProxyCommand=calc/a",
+		"ssh://-u@host/a", "git@-oProxy:a", "-oProxy@host:a", "git@host:-a", "git@host:", "https://github.com/a b",
+		"https://github.com/a\nb", "https://github.com/a'b", "git@host:a::b",
+	} {
+		if GitURL(bad) == nil {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}

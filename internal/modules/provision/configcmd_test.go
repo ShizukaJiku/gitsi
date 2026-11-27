@@ -124,13 +124,13 @@ func TestConfigIsATopLevelCommandForBothRoles(t *testing.T) {
 func TestWatchSettings(t *testing.T) {
 	env, _, home := cfgEnv(t, config.RoleEdge)
 	dir := filepath.Join(home, "Downloads", "gitsi")
-	for _, args := range [][]string{{"set", "watch.auto_update", "on"}, {"set", "watch.report", "on"}, {"set", "watch.auto_take", dir}} {
+	for _, args := range [][]string{{"set", "watch.auto_update", "on"}, {"set", "watch.report", "on"}, {"set", "watch.auto_take", dir}, {"set", "watch.mirror", "on"}} {
 		if err := configCmd(context.Background(), env, args); err != nil {
 			t.Fatalf("%v: %v", args, err)
 		}
 	}
 	w := env.Config.Watch
-	if !w.AutoUpdate || !w.Report || w.AutoTake != dir {
+	if !w.AutoUpdate || !w.Report || w.AutoTake != dir || !w.Mirror {
 		t.Fatalf("%+v", w)
 	}
 	if err := configCmd(context.Background(), env, []string{"set", "watch.auto_take", "relative"}); err == nil {

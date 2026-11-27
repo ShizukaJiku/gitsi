@@ -5,6 +5,7 @@ package safe
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -15,6 +16,8 @@ var (
 	hostRe   = regexp.MustCompile(`^[A-Za-z0-9._:][A-Za-z0-9._:-]{0,252}$`)
 	branchRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	pathRe   = regexp.MustCompile(`^[A-Za-z0-9:/._ -][A-Za-z0-9:/._ ~-]*$`)
+	// scp-like git URL (user@host:path). The user is required: without it, "C:/repo" would read as host C and path /repo.
+	scpURLRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._-]*@[A-Za-z0-9.][A-Za-z0-9.-]*:[A-Za-z0-9._~][A-Za-z0-9._~/-]*$`)
 
 	badFileRe  = regexp.MustCompile(`[\x00-\x1f<>:"/\\|?*]`)
 	reservedRe = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$`)
@@ -66,6 +69,32 @@ func Branch(v string) error {
 func Path(what, v string) error {
 	if !pathRe.MatchString(v) || strings.Contains(v, "..") {
 		return fmt.Errorf("invalid %s: %q", what, v)
+	}
+	return nil
+}
+
+// GitURL validates a remote repo URL (an origin the edge fetches from): https://host/path, ssh://[user@]host[:port]/path or
+// user@host:path. Anything else is rejected, because the URL may come from a file the hub suggested and git would act on it:
+// a leading dash is read as an option, "::" names a transport helper (ext:: runs a command), and file:// or a local path would
+// read something of the edge's own that then travels to the hub. Plain http is rejected too: the content would come unverified.
+func GitURL(v string) error {
+	bad := fmt.Errorf("invalid origin URL: %q (use https://host/path, ssh://host/path or user@host:path)", v)
+	if v == "" || strings.HasPrefix(v, "-") || strings.Contains(v, "::") || strings.ContainsAny(v, " '\"`\\") ||
+		strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return bad
+	}
+	if scpURLRe.MatchString(v) {
+		return nil
+	}
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Opaque != "" || strings.Trim(u.Path, "/") == "" {
+		return bad
+	}
+	if h := u.Hostname(); h == "" || Host(h) != nil {
+		return bad
+	}
+	if u.User != nil && strings.HasPrefix(u.User.Username(), "-") {
+		return bad
 	}
 	return nil
 }

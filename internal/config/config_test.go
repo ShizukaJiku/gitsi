@@ -170,3 +170,40 @@ func TestHostAliasDefault(t *testing.T) {
 		t.Fatal("default alias gitsi-hub; a configured one is kept")
 	}
 }
+
+// The mirror list is checked before use, like the hub's values: config.json may be edited by hand.
+func TestMirrorValidate(t *testing.T) {
+	ok := Mirror{Repos: []MirrorRepo{
+		{Name: "app", URL: "https://github.com/acme/app.git", Branches: []string{"development", "release/1"}},
+		{Name: "lib", URL: "git@github.com:acme/lib.git", Branches: []string{"main"}},
+	}}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("a valid list: %v", err)
+	}
+	for what, m := range map[string]Mirror{
+		"repo name":       {Repos: []MirrorRepo{{Name: "-x", URL: "https://h/a", Branches: []string{"main"}}}},
+		"url":             {Repos: []MirrorRepo{{Name: "a", URL: "file:///C:/x", Branches: []string{"main"}}}},
+		"no branches":     {Repos: []MirrorRepo{{Name: "a", URL: "https://h/a"}}},
+		"branch":          {Repos: []MirrorRepo{{Name: "a", URL: "https://h/a", Branches: []string{"a..b"}}}},
+		"repeated branch": {Repos: []MirrorRepo{{Name: "a", URL: "https://h/a", Branches: []string{"Main", "main"}}}},
+		"repeated repo":   {Repos: []MirrorRepo{{Name: "a", URL: "https://h/a", Branches: []string{"main"}}, {Name: "A", URL: "https://h/b", Branches: []string{"main"}}}},
+	} {
+		if m.Validate() == nil {
+			t.Errorf("%s: should be rejected", what)
+		}
+	}
+}
+
+func TestMirrorRoundTrip(t *testing.T) {
+	isolate(t)
+	c := Default()
+	c.Watch.Mirror = true
+	c.Mirror.Repos = []MirrorRepo{{Name: "app", URL: "https://github.com/acme/app.git", Branches: []string{"development"}}}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load()
+	if err != nil || !got.Watch.Mirror || len(got.Mirror.Repos) != 1 || got.Mirror.Repos[0].Branches[0] != "development" {
+		t.Fatalf("%+v %v", got, err)
+	}
+}

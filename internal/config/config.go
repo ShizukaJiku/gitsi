@@ -103,6 +103,7 @@ type Config struct {
 	Policy     Policy    `json:"policy"`
 	Watch      Watch     `json:"watch"`
 	Clip       Clip      `json:"clip"`
+	Mirror     Mirror    `json:"mirror"`
 }
 
 // Watch holds the automatic reactions of 'gitsi watch' on the edge (all off by default; docs/WATCH.md).
@@ -111,6 +112,53 @@ type Watch struct {
 	AutoTake   string `json:"auto_take,omitempty"`   // folder to receive whatever arrives in the outbox ("" = no)
 	Report     bool   `json:"report,omitempty"`      // leave each reaction's result in the hub's inbox
 	AutoFetch  bool   `json:"auto_fetch,omitempty"`  // git fetch the repo of watch's folder when it changes on the bridge
+	Mirror     bool   `json:"mirror,omitempty"`      // keep the origin mirrors (Config.Mirror) up to date while watch runs
+}
+
+// Mirror lists the origin branches this edge keeps mirrored on the bridge. Only the edge decides it: the hub never supplies
+// or changes a URL to follow.
+type Mirror struct {
+	Repos []MirrorRepo `json:"repos,omitempty"`
+}
+
+// MirrorRepo is one bridge repo and the origin branches mirrored into it.
+type MirrorRepo struct {
+	Name     string   `json:"name"`     // the bridge repo
+	URL      string   `json:"url"`      // the origin, as git understands it (safe.GitURL)
+	Branches []string `json:"branches"` // exact branch names
+}
+
+// Validate checks the list before it is used, like Hub.Validate: config.json may be edited by hand, and it is not done in Load so
+// that an invalid value does not block the commands that fix it. Names are compared without case: on Windows the bare repos and
+// loose refs are files, and "App" and "app" would be the same one.
+func (m Mirror) Validate() error {
+	repos := map[string]bool{}
+	for _, r := range m.Repos {
+		if err := safe.Name("mirror repo", r.Name); err != nil {
+			return err
+		}
+		if repos[strings.ToLower(r.Name)] {
+			return fmt.Errorf("mirror %s: the repo is listed twice", r.Name)
+		}
+		repos[strings.ToLower(r.Name)] = true
+		if err := safe.GitURL(r.URL); err != nil {
+			return fmt.Errorf("mirror %s: %w", r.Name, err)
+		}
+		if len(r.Branches) == 0 {
+			return fmt.Errorf("mirror %s: no branch to follow", r.Name)
+		}
+		branches := map[string]bool{}
+		for _, b := range r.Branches {
+			if err := safe.Branch(b); err != nil {
+				return fmt.Errorf("mirror %s: %w", r.Name, err)
+			}
+			if branches[strings.ToLower(b)] {
+				return fmt.Errorf("mirror %s: branch %s is listed twice", r.Name, b)
+			}
+			branches[strings.ToLower(b)] = true
+		}
+	}
+	return nil
 }
 
 // Clip tunes the clipboard shared between hub and edge while watch runs (docs/CLIP.md). It also needs the clip policy.
