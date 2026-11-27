@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ShizukaJiku/gitsi/internal/config"
 )
 
 func TestPRURL(t *testing.T) {
@@ -24,13 +22,6 @@ func TestPRURL(t *testing.T) {
 	}
 	if got := prURL("https://github.com/acme/app", "next", "feat"); got != "https://github.com/acme/app/compare/next...feat?expand=1" {
 		t.Error(got)
-	}
-}
-
-func TestBridgeURL(t *testing.T) {
-	cfg := config.Default()
-	if got := bridgeURL(cfg, "C:/Users/user/repos/", "x"); got != "gitsi-hub:C:/Users/user/repos/x.git" {
-		t.Fatal(got)
 	}
 }
 

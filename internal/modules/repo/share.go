@@ -7,20 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ShizukaJiku/gitsi/internal/bridge"
 	"github.com/ShizukaJiku/gitsi/internal/gitx"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/policy"
 	"github.com/ShizukaJiku/gitsi/internal/safe"
 )
-
-// ensureBareCmd builds the (PowerShell) command that creates the bare repo on the hub when it does not exist. It leaves HEAD on
-// the right branch (avoids "remote HEAD refers to nonexistent ref") and hands ownership to the user (avoids "dubious ownership":
-// an administrator SSH session creates things owned by the Administrators group).
-func ensureBareCmd(bare, branch, user string) string {
-	return "if (-not (Test-Path '" + bare + "/HEAD')) { " +
-		"git init --bare -b '" + branch + "' '" + bare + "' | Out-Null; " +
-		"icacls '" + bare + "' /setowner '" + user + "' /T /C /Q | Out-Null; 'CREATED' } else { 'EXISTS' }"
-}
 
 func share(ctx context.Context, env *module.Env, args []string) error {
 	cfg := env.Config
@@ -71,7 +63,7 @@ func share(ctx context.Context, env *module.Env, args []string) error {
 	}
 
 	fmt.Fprintln(env.Stdout, "Preparing the repo on the hub...")
-	res, err := env.RunOnHub(ctx, ensureBareCmd(bare, *branch, cfg.Hub.User))
+	res, err := env.RunOnHub(ctx, bridge.EnsureBareScript(bare, *branch, cfg.Hub.User))
 	if err != nil {
 		return err
 	}

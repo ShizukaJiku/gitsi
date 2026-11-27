@@ -72,6 +72,7 @@ internal/
   clip               the shared clipboard: the item, its frames, the hub's slot and the Sharer (read, filter, send, receive, write)
   layout             the hub's layout (Home, Repos, Binary, Mailbox, Jobs): computed by the hub, sent in the greeting
   hubview            how the edge discovers it (greeting + 10 min cache per user@host:port)
+  bridge             how the edge reaches the hub's bare repos: their git URL and the script that creates one
   -- features (one package per CLI group) --
   modules/
     provision        setup edge | hub | key, config      (OpenSSH, firewall, keys, ~/.ssh/config)

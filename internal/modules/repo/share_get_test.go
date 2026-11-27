@@ -64,7 +64,7 @@ func newHubRig(t *testing.T) *hubRig {
 
 	r := &hubRig{t: t, repos: repos, out: &strings.Builder{}}
 	r.hub = &fakeHub{run: func(cmd string) (transport.Result, error) {
-		if strings.HasPrefix(cmd, "if (-not (Test-Path") { // ensureBareCmd: creates the bare repo (or says it already exists)
+		if strings.HasPrefix(cmd, "if (-not (Test-Path") { // bridge.EnsureBareScript: creates the bare repo (or says it already exists)
 			m := initRe.FindStringSubmatch(cmd)
 			if m == nil {
 				t.Fatalf("unrecognized command: %s", cmd)

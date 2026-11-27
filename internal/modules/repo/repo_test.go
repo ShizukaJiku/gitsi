@@ -47,15 +47,6 @@ func newEnv(reposDir string) (*module.Env, *bytes.Buffer) {
 	return env, &out
 }
 
-func TestEnsureBareCmd(t *testing.T) {
-	c := ensureBareCmd("C:/Users/user/repos/x.git", "master", "user")
-	for _, want := range []string{"git init --bare -b 'master' 'C:/Users/user/repos/x.git'", "icacls 'C:/Users/user/repos/x.git' /setowner 'user'", "CREATED", "EXISTS"} {
-		if !strings.Contains(c, want) {
-			t.Errorf("missing %q in %s", want, c)
-		}
-	}
-}
-
 func TestListCmd(t *testing.T) {
 	if c := listCmd("C:/r"); !strings.Contains(c, `Get-ChildItem 'C:/r'`) || !strings.Contains(c, `\.git$`) {
 		t.Fatal(c)

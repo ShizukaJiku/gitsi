@@ -8,16 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ShizukaJiku/gitsi/internal/bridge"
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/gitx"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/safe"
 )
-
-// bridgeURL is the URL git uses to reach the hub's bare repo (it uses the ~/.ssh/config alias).
-func bridgeURL(cfg *config.Config, reposDir, name string) string {
-	return cfg.Hub.HostAlias() + ":" + strings.TrimRight(reposDir, "/") + "/" + name + ".git"
-}
 
 // get (edge role) brings to the edge a repo that exists on the hub. The bridge remote is named config.RemoteName ('hub'), and
 // 'origin' stays free for the target repo (e.g. GitHub).
@@ -58,7 +54,7 @@ func get(ctx context.Context, env *module.Env, args []string) error {
 	}
 
 	g := gitx.New("")
-	if err := g.Passthrough(ctx, env.Stdout, env.Stderr, "clone", "-o", cfg.RemoteName, bridgeURL(cfg, lay.Repos, name), dst); err != nil {
+	if err := g.Passthrough(ctx, env.Stdout, env.Stderr, "clone", "-o", cfg.RemoteName, bridge.URL(cfg, lay.Repos, name), dst); err != nil {
 		return err
 	}
 	if err := ensureCheckout(ctx, env, gitx.New(dst), cfg.RemoteName); err != nil {
