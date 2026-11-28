@@ -19,6 +19,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/clip"
 	"github.com/ShizukaJiku/gitsi/internal/hubclient"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
+	"github.com/ShizukaJiku/gitsi/internal/mirror"
 	"github.com/ShizukaJiku/gitsi/internal/procx"
 	"github.com/ShizukaJiku/gitsi/internal/transport"
 	"github.com/ShizukaJiku/gitsi/internal/watch"
@@ -434,6 +435,87 @@ func TestThroughRealOpenSSH(t *testing.T) {
 		got, _ = os.ReadFile(filepath.Join(os.Getenv("USERPROFILE"), "Downloads", "gitsi", "report.txt"))
 		if !strings.Contains(string(got), "job-report") {
 			t.Fatalf("job get must leave the file in Downloads\\gitsi: %q", got)
+		}
+	})
+
+	// gitsi mirror over a real ssh (docs/MIRROR.md): add seeds and pushes the origin branch to the bridge's hidden ref, the edge's
+	// report reaches the hub, and a watch with watch.mirror on (the real binary, so its child is gitsi too) carries a new origin
+	// commit. The origin is a local folder reached through insteadOf; the edge's global config allows the file protocol (the
+	// production limit is https/ssh, and protocol.file.allow is more specific than its protocol.allow=never).
+	t.Run("mirror: origin branch to the bridge, report to the hub, watch keeps it up to date", func(t *testing.T) {
+		origin := filepath.Join(dir, "origin-src")
+		os.MkdirAll(origin, 0o755)
+		git := func(args ...string) string {
+			c := procx.Background(exec.Command("git", append([]string{"-C", origin, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "safe.directory=*"}, args...)...))
+			out, err := c.CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		git("init", "-q", "-b", "main")
+		os.WriteFile(filepath.Join(origin, "v.txt"), []byte("1"), 0o644)
+		git("add", ".")
+		git("commit", "-q", "-m", "one")
+		git("checkout", "-q", "-b", "development")
+		gc := "[url \"" + filepath.ToSlash(origin) + "\"]\n\tinsteadOf = https://origin.test/proy\n[protocol \"file\"]\n\tallow = always\n"
+		if err := os.WriteFile(filepath.Join(edgeHome, ".gitconfig"), []byte(gc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		bare := filepath.Join(hubRepos, "proy-mirror.git")
+		onBridge := func() string {
+			c := procx.Background(exec.Command("git", "-c", "safe.directory=*", "-C", bare, "rev-parse", "--verify", "--quiet", "refs/gitsi/mirror/development"))
+			out, _ := c.Output()
+			return strings.TrimSpace(string(out))
+		}
+
+		if code, out, errb := run("", "mirror", "add", "proy-mirror", "https://origin.test/proy", "-branch", "development"); code != 0 {
+			t.Fatalf("mirror add: %d\n%s\n%s", code, out, errb)
+		}
+		if code, out, errb := run("", "mirror", "sync"); code != 0 { // add only prepares: the first push is the first cycle's
+			t.Fatalf("mirror sync: %d\n%s\n%s", code, out, errb)
+		}
+		if got, want := onBridge(), git("rev-parse", "HEAD"); got != want {
+			t.Fatalf("the bridge must have the origin's tip: %q, want %q", got, want)
+		}
+		reps, err := mirror.Store{Dir: mirror.Dir(hubRoot)}.List()
+		if err != nil || len(reps) != 1 || len(reps[0].Repos) != 1 || reps[0].Repos[0].Name != "proy-mirror" ||
+			len(reps[0].Repos[0].Branches) != 1 || reps[0].Repos[0].Branches[0].Tip != onBridge() {
+			t.Fatalf("the hub must have the edge's report with the tip: %+v %v", reps, err)
+		}
+
+		// watch: its first cycle, when it starts, brings a commit the origin got meanwhile.
+		if code, out, errb := run("", "config", "set", "watch.mirror", "on"); code != 0 {
+			t.Fatalf("%d %s%s", code, out, errb)
+		}
+		os.WriteFile(filepath.Join(origin, "v.txt"), []byte("2"), 0o644)
+		git("commit", "-q", "-am", "two")
+		want := git("rev-parse", "HEAD")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var wout lockedBuf
+		w := procx.Background(exec.CommandContext(ctx, hubBin, "watch"))
+		w.Stdout, w.Stderr, w.Stdin = &wout, &wout, strings.NewReader("")
+		if err := w.Start(); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(90 * time.Second)
+		for onBridge() != want && time.Now().Before(deadline) {
+			time.Sleep(250 * time.Millisecond)
+		}
+		for !strings.Contains(wout.String(), "mirror: 1 repo(s), 1 updated") && time.Now().Before(deadline) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		cancel()
+		w.Wait()
+		if onBridge() != want {
+			t.Fatalf("watch did not bring the new commit to the bridge:\n%s", wout.String())
+		}
+		if !strings.Contains(wout.String(), "mirror: 1 repo(s), 1 updated") {
+			t.Fatalf("watch must say the mirror changed:\n%s", wout.String())
+		}
+		if code, out, errb := run("", "config", "set", "watch.mirror", "off"); code != 0 {
+			t.Fatalf("%d %s%s", code, out, errb)
 		}
 	})
 

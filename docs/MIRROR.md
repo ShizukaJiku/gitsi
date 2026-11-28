@@ -75,4 +75,6 @@ the lease only makes sure neither overwrites the other unknowingly.
 Real git over temporary folders, with origins reached through `insteadOf` (`internal/modules/mirrorcmd`): seeding from the bridge,
 no push when nothing moved, rewrites, the lease that recovers, one failing repo among others, the protocol limit, an origin that
 asks for a password failing at once, lists validated whole. The report with in-memory pipes and the hub's real handler
-(`internal/mirror`); the watch reaction with a fake runner (no overlap, a lasting failure said once).
+(`internal/mirror`); the watch reaction with a fake runner (no overlap, a lasting failure said once). Over a real sshd
+(`scripts/e2e-ssh.ps1`): add and the first cycle reach the bridge, the report reaches the hub, and the real binary's watch carries
+a new origin commit.
