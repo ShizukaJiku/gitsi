@@ -97,6 +97,9 @@ func (r Report) Validate() error {
 	return nil
 }
 
+// LocalDir is where an edge keeps its local mirror copies, one bare repo per mirror: <profile>/.gitsi/mirrors.
+func LocalDir(profile string) string { return filepath.Join(profile, ".gitsi", "mirrors") }
+
 // Dir is where the hub keeps the reports, inside its home (layout.Layout.Home).
 func Dir(home string) string { return filepath.Join(filepath.FromSlash(home), "mirror") }
 

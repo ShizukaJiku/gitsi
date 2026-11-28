@@ -19,6 +19,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/desktop"
 	"github.com/ShizukaJiku/gitsi/internal/gitx"
+	"github.com/ShizukaJiku/gitsi/internal/mirror"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/safe"
 )
@@ -68,7 +69,7 @@ var originConfig = []string{"-c", "protocol.allow=never", "-c", "protocol.https.
 // mirrorsDir holds the local bare repos, one per mirror.
 func mirrorsDir() (string, error) {
 	home, err := os.UserHomeDir()
-	return filepath.Join(home, ".gitsi", "mirrors"), err
+	return mirror.LocalDir(home), err
 }
 
 func localDir(name string) (string, error) {

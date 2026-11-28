@@ -187,6 +187,9 @@ func TestHubGetAndListUseTheLocalBridge(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dst, "a.txt")); string(b) != "hola" {
 		t.Fatal("get on the hub must clone from the local bridge")
 	}
+	if !strings.Contains(gitCmd(t, dst, "config", "--get-all", "remote.origin.fetch"), mirrorRefspec) {
+		t.Fatal("the hub's working clone shows the origin mirrors as mirror/<branch>")
+	}
 	if !recorded(t, "demo", dst) {
 		t.Fatal("the hub's working folder is recorded for the tray")
 	}

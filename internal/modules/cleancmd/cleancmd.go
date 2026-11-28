@@ -13,6 +13,7 @@ import (
 	"github.com/ShizukaJiku/gitsi/internal/cleanup"
 	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/layout"
+	"github.com/ShizukaJiku/gitsi/internal/mirror"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 	"github.com/ShizukaJiku/gitsi/internal/progress"
 )
@@ -51,6 +52,12 @@ func run(_ context.Context, env *module.Env, args []string) error {
 			return err
 		}
 		removed = cleanup.Hub(layout.ForHub(env.Config, home), now, *dry)
+	} else if home, err := os.UserHomeDir(); err == nil {
+		var keep []string
+		for _, r := range env.Config.Mirror.Repos {
+			keep = append(keep, r.Name)
+		}
+		removed = cleanup.Mirrors(mirror.LocalDir(home), keep, now, *dry)
 	}
 	// 'take' exists on both roles: partial downloads and 'take -clip' copies stay on this machine whatever its role.
 	removed = append(removed, cleanup.Parts(cleanup.ReceiveDir(), now, *dry)...)

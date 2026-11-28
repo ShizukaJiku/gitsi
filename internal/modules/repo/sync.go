@@ -60,6 +60,9 @@ func syncCmd(ctx context.Context, env *module.Env, args []string) error {
 		fmt.Fprintln(env.Stderr, "Warning: there are uncommitted changes; they do not travel until you commit them.")
 	}
 
+	if isHub && rn == "origin" {
+		ensureMirrorRefspec(ctx, g, rn) // a clone made before the mirrors existed gains it here
+	}
 	track := "refs/remotes/" + rn + "/" + br
 	before, _ := g.Out(ctx, "rev-parse", "--verify", "--quiet", track)
 	if _, err := g.Out(ctx, "fetch", rn); err != nil {

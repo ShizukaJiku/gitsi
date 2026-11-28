@@ -143,7 +143,8 @@ Publishing does not fail with the hub's binary in use either. The build keeps th
 binary is harder to inspect, and some endpoint protection products quarantine stripped Go executables.
 
 **D19 - Retention: nothing piles up.** Mailbox items and finished jobs on the hub, after 14 days; partial downloads and `take -clip`
-copies on the receiving machine, after 7; the hub's clipboard slot, after 10 minutes; `watch.log` (the tray) and `audit.log`
+copies on the receiving machine, after 7; the hub's clipboard slot, after 10 minutes; an edge's mirror report on the hub, after 14 days
+without a cycle, and on the edge the local copy of a mirror no longer followed, with `gitsi clean`; `watch.log` (the tray) and `audit.log`
 rotate past 1 MiB. No background processes: cleanup is triggered by use (at most once an hour on the hub)
 and `gitsi clean [-dry-run]` applies it on the spot.
 

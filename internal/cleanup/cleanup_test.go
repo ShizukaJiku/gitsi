@@ -133,3 +133,33 @@ func TestReceiveDirIsDownloadsGitsi(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// On the hub, an edge's mirror report that no cycle renewed in 14 days goes; on the edge, a local mirror copy of a repo no longer
+// followed goes once it is a day old (a younger one may belong to a mirror add in progress).
+func TestMirrorReportsAndOrphanCopies(t *testing.T) {
+	now := time.Now()
+	reports := t.TempDir()
+	for name, age := range map[string]time.Duration{"old@pc.json": 15 * 24 * time.Hour, "me@laptop.json": time.Hour} {
+		p := filepath.Join(reports, name)
+		os.WriteFile(p, []byte("{}"), 0o600)
+		touch(t, p, age)
+	}
+	if got := MirrorReports(reports, now, true); len(got) != 1 || !exists(filepath.Join(reports, "old@pc.json")) {
+		t.Fatalf("dry-run: %+v", got)
+	}
+	if got := MirrorReports(reports, now, false); len(got) != 1 || got[0].What != "mirror report" || exists(filepath.Join(reports, "old@pc.json")) || !exists(filepath.Join(reports, "me@laptop.json")) {
+		t.Fatalf("%+v", got)
+	}
+
+	copies := t.TempDir()
+	for name, age := range map[string]time.Duration{"App.git": 3 * 24 * time.Hour, "gone.git": 3 * 24 * time.Hour, "new.git": time.Minute} {
+		p := filepath.Join(copies, name)
+		os.MkdirAll(filepath.Join(p, "objects"), 0o755)
+		os.WriteFile(filepath.Join(p, "HEAD"), []byte("ref: refs/heads/main\n"), 0o444) // git leaves read-only files
+		touch(t, p, age)
+	}
+	got := Mirrors(copies, []string{"app"}, now, false)
+	if len(got) != 1 || got[0].Name != "gone" || exists(filepath.Join(copies, "gone.git")) || !exists(filepath.Join(copies, "App.git")) || !exists(filepath.Join(copies, "new.git")) {
+		t.Fatalf("%+v", got)
+	}
+}

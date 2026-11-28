@@ -207,3 +207,19 @@ func TestSyncNeedsABranch(t *testing.T) {
 	gitCmd(t, r.w, "checkout", "-q", "--detach")
 	r.stops(r.edgeSync(), "not on a branch")
 }
+
+// The origin mirrors an edge keeps on the bridge (gitsi mirror: refs/gitsi/mirror/<branch>) show in the hub's working clone as
+// mirror/<branch> after a sync. A clone made before gains the refspec on its first sync, and only once.
+func TestHubSyncShowsTheMirrors(t *testing.T) {
+	r := newSyncRig(t)
+	tip := gitCmd(t, r.w, "rev-parse", "HEAD")
+	gitCmd(t, r.w, "push", "-q", r.bridge, "HEAD:refs/gitsi/mirror/release/1")
+	r.must(r.hubSync())
+	r.must(r.hubSync())
+	if got := gitCmd(t, r.hub, "rev-parse", "refs/remotes/mirror/release/1"); got != tip {
+		t.Fatalf("mirror/release/1 = %q, want %q", got, tip)
+	}
+	if n := strings.Count(gitCmd(t, r.hub, "config", "--get-all", "remote.origin.fetch"), mirrorRefspec); n != 1 {
+		t.Fatalf("the refspec is there %d times", n)
+	}
+}

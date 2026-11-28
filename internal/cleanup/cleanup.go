@@ -6,11 +6,13 @@ package cleanup
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/ShizukaJiku/gitsi/internal/layout"
 	"github.com/ShizukaJiku/gitsi/internal/mailbox"
+	"github.com/ShizukaJiku/gitsi/internal/mirror"
 )
 
 // Retention periods.
@@ -19,12 +21,17 @@ const (
 	JobsMaxAge    = 14 * 24 * time.Hour // FINISHED jobs (running ones are never touched)
 	PartMaxAge    = 7 * 24 * time.Hour  // abandoned partial downloads
 	ClipMaxAge    = 7 * 24 * time.Hour  // copies left by 'take -clip'
-	Interval      = time.Hour           // automatic cleanup never runs more often than this
+	// MirrorReportMaxAge: an edge's mirror report on the hub that no cycle renewed (the edge stopped mirroring, or is gone).
+	MirrorReportMaxAge = 14 * 24 * time.Hour
+	// MirrorOrphanMinAge: a local mirror copy of a repo no longer followed is left alone this long (it may be a mirror add in
+	// progress, whose configuration is saved at the end).
+	MirrorOrphanMinAge = 24 * time.Hour
+	Interval           = time.Hour // automatic cleanup never runs more often than this
 )
 
 // Removed is something that was removed (or would be, with dry-run).
 type Removed struct {
-	What string        `json:"what"` // "inbox", "outbox", "job", "partial", "clipboard"
+	What string        `json:"what"` // "inbox", "outbox", "job", "partial", "clipboard", "mirror report", "mirror copy"
 	Name string        `json:"name"`
 	Size int64         `json:"size"`
 	Age  time.Duration `json:"age_ns"`
@@ -155,7 +162,56 @@ func dirSize(p string) int64 {
 // Hub applies the hub's retention: mailbox and jobs, in the folders the hub itself decides.
 func Hub(lay layout.Layout, now time.Time, dry bool) []Removed {
 	st := &mailbox.Store{Root: filepath.FromSlash(lay.Mailbox)}
-	return append(Mailbox(st, now, dry), Jobs(filepath.FromSlash(lay.Jobs), now, dry)...)
+	out := append(Mailbox(st, now, dry), Jobs(filepath.FromSlash(lay.Jobs), now, dry)...)
+	return append(out, MirrorReports(mirror.Dir(lay.Home), now, dry)...)
+}
+
+// MirrorReports removes the edges' mirror reports (internal/mirror) older than MirrorReportMaxAge: each cycle renews its edge's,
+// so an old one belongs to an edge that no longer mirrors, and would otherwise show as stale for ever.
+func MirrorReports(dir string, now time.Time, dry bool) []Removed {
+	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	var out []Removed
+	for _, p := range files {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if age := now.Sub(info.ModTime()); age > MirrorReportMaxAge {
+			if dry || os.Remove(p) == nil {
+				out = append(out, Removed{What: "mirror report", Name: strings.TrimSuffix(filepath.Base(p), ".json"), Size: info.Size(), Age: age})
+			}
+		}
+	}
+	return out
+}
+
+// Mirrors removes the edge's local mirror copies (<dir>/<name>.git) of repos it no longer follows (keep: the followed names, without
+// case, as config.Mirror compares them). They are left behind when a mirror is removed from config.json by hand, or when gitsi
+// mirror rm could not finish.
+func Mirrors(dir string, keep []string, now time.Time, dry bool) []Removed {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []Removed
+	for _, e := range entries {
+		name, ok := strings.CutSuffix(e.Name(), ".git")
+		if !e.IsDir() || !ok || slices.ContainsFunc(keep, func(k string) bool { return strings.EqualFold(k, name) }) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if age := now.Sub(info.ModTime()); age > MirrorOrphanMinAge {
+			p := filepath.Join(dir, e.Name())
+			size := dirSize(p)
+			if dry || os.RemoveAll(p) == nil {
+				out = append(out, Removed{What: "mirror copy", Name: name, Size: size, Age: age})
+			}
+		}
+	}
+	return out
 }
 
 // HubAuto is the hub's automatic cleanup: at most once per Interval (marker in <home>/.cleanup).

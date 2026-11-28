@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ShizukaJiku/gitsi/internal/gitx"
@@ -71,6 +72,9 @@ func clone(ctx context.Context, env *module.Env, args []string) error {
 	if err := ensureCheckout(ctx, env, gitx.New(dst), "origin"); err != nil {
 		return err
 	}
+	if ensureMirrorRefspec(ctx, gitx.New(dst), "origin") {
+		_, _ = gitx.New(dst).Out(ctx, "fetch", "--quiet", "origin") // brings the mirrors the clone did not
+	}
 	remember(ctx, gitx.New(dst), dst, "origin")
 	fmt.Fprintf(env.Stdout, "Cloned in %s\n", dst)
 	return nil
@@ -95,4 +99,20 @@ func ensureCheckout(ctx context.Context, env *module.Env, c *gitx.Git, remote st
 	}
 	fmt.Fprintf(env.Stdout, "Default branch set to '%s'.\n", b)
 	return nil
+}
+
+// mirrorRefspec shows the origin mirrors an edge keeps on the bridge (gitsi mirror, refs/gitsi/mirror/<branch>) as the remote
+// branches mirror/<branch> of a hub working clone: git log HEAD..mirror/development, without knowing the bridge's hidden refs.
+// "mirror/", not "upstream/": many clones already have a remote of their own called upstream.
+const mirrorRefspec = "+refs/gitsi/mirror/*:refs/remotes/mirror/*"
+
+// ensureMirrorRefspec adds mirrorRefspec to the remote's fetch refspecs when it is not there yet, and says whether it added it.
+func ensureMirrorRefspec(ctx context.Context, g *gitx.Git, remote string) bool {
+	key := "remote." + remote + ".fetch"
+	have, _ := g.Out(ctx, "config", "--get-all", key)
+	if slices.Contains(strings.Fields(have), mirrorRefspec) { // one refspec per line, and a refspec has no spaces
+		return false
+	}
+	_, err := g.Out(ctx, "config", "--add", key, mirrorRefspec)
+	return err == nil
 }

@@ -131,6 +131,7 @@ gitsi mirror sync                    # EDGE: bring what changed now (only the br
 gitsi mirror ls                      # EDGE: what it follows, the last check and the last error of each
 gitsi mirror rm app [-branch dev]    # EDGE: stop following it (the bridge repo stays)
 gitsi mirror ls                      # HUB: what each edge mirrors, its last cycle and errors; STALE when it stopped checking
+git fetch; git log HEAD..mirror/development   # HUB, in a working clone (repo get): the mirrors show as mirror/<branch>
 ```
 The first `add` seeds the edge's copy from the bridge, so only what the bridge lacks comes from the origin. Toward the origin git
 never asks anything: an expired credential is an error of that repo, and the others go on. Origin URLs are `https://`, `ssh://` or
@@ -258,6 +259,8 @@ the mailbox is used or when something is received; at most once an hour on the h
 | Partial `take` downloads | the receiving machine (edge or hub) | after 7 days (recent ones resume) |
 | `take -clip` copies and files received on the shared clipboard | the receiving machine (edge or hub) | after 7 days |
 | The shared clipboard's slot | hub | after 10 minutes |
+| An edge's mirror report (`mirror ls`) | hub | after 14 days without a cycle |
+| The local copy of a mirror no longer followed | edge | with `gitsi clean`, once a day old (`mirror rm` already removes it) |
 | `watch.log` (watch in the tray) | both | past 1 MiB it becomes `watch.log.1` |
 | `audit.log` | both | past 1 MiB it becomes `audit.log.1` |
 
