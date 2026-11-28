@@ -123,7 +123,8 @@ The full cycle (edge -> hub -> origin) is in [`docs/WORKFLOW.md`](docs/WORKFLOW.
 ## Guide: following origin branches (`mirror`)
 The hub does not reach the origin, so the edge keeps the branches the hub must follow (the team's `development`, `main`...)
 mirrored on the bridge. Only the edge decides what is followed, and nothing is merged or touched: the mirror lives in hidden refs
-of the bridge repo (`refs/gitsi/mirror/<branch>`), apart from the branches shared with `sync`.
+of the bridge repo (`refs/gitsi/mirror/<branch>`), apart from the branches shared with `sync`
+([`docs/MIRROR.md`](docs/MIRROR.md)).
 ```powershell
 gitsi mirror add app https://github.com/acme/app.git -branch development   # EDGE: follow a branch (repeat -branch for more)
 gitsi mirror add -list repos.txt     # EDGE: several, one "<name> <origin-url> <branch>..." per line; shows them and asks
@@ -343,6 +344,7 @@ also tests `send -clip` (it overwrites your session's clipboard). Contribution r
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) - current design decisions, by topic
 - [`docs/WORKFLOW.md`](docs/WORKFLOW.md) - the edge <-> hub <-> origin workflow
 - [`docs/WATCH.md`](docs/WATCH.md) - design of `gitsi watch` (hub notices and reactions)
+- [`docs/MIRROR.md`](docs/MIRROR.md) - design of `gitsi mirror` (origin branches the edge keeps on the bridge)
 - [`docs/CLIP.md`](docs/CLIP.md) - the shared clipboard between hub and edge (design and behavior)
 - [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) - what gitsi does on a managed machine, for security reviewers
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) - planned improvements

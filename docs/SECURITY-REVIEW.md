@@ -26,6 +26,9 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
   **notices** (new version, item available, job finished). It never receives commands through it. With the `clip` policy on, the
   same session also carries **clipboard items** both ways (text, image or files the user copied and chose to share: the hotkey, or
   every copy with `clip.auto`).
+- `gitsi mirror` (optional, set up by the user on the edge): `git.exe` fetches the branches the user chose from their origin
+  (https or ssh only, never interactive) and pushes them to hidden refs of the hub's bridge repo, by hand (`mirror sync`) or every
+  10 minutes while `watch` runs with `watch.mirror on`. The hub never supplies the URLs.
 
 ### Processes it starts
 | Process | What for | When |
@@ -38,6 +41,7 @@ Design principle: **the edge only makes outbound connections**. Nothing is expos
 | `powershell.exe -NoProfile -NonInteractive` | add the docker client's folder to the account's PATH (registry `HKCU\Environment`) | `gitsi docker` |
 | `docker.exe` (the official, signed Docker client) | drive the hub's Docker over SSH | `gitsi docker` and when the user runs `docker` |
 | `gitsi.exe` itself | `watch`'s reactions (update, pull an item, leave a report) | only when the user enabled them |
+| `git.exe fetch`, `git.exe push` | `gitsi mirror`: fetch the followed branches from their origin, push those that moved to the bridge | when the user runs `gitsi mirror`, or in `watch` with `watch.mirror on` |
 | `git.exe fetch` | the `watch.auto_fetch` reaction: update the remote branches of the repo where watch runs when it changes on the hub | only when the user enabled it |
 | `gitsi.exe watch -tray` | the same binary, detached (no console) so it stays in the tray | only when the user runs `gitsi watch -tray` |
 | `notepad.exe` | open watch's log from the tray menu | only when the user picks it |
@@ -46,7 +50,7 @@ Every helper process whose output gitsi reads is started with `CREATE_NO_WINDOW`
 
 ### Files it writes
 - `%USERPROFILE%\.gitsi\`: `config.json` (configuration), `hub-layout.json` (cache), `watch-state.json`, `workdirs.json` (the repos' working
-  folders the tray lists), `audit.log` (rotates past
+  folders the tray lists), `mirror-state.json` and `mirrors\<name>.git` (`gitsi mirror`: its last cycles and a bare copy per mirror), `audit.log` (rotates past
   1 MiB).
 - `%USERPROFILE%\.ssh\config` (adds/replaces **only** the `gitsi-hub` block), `known_hosts` (gitsi pins the hub's fingerprint when
   the user gives it), `gitsi_ed25519` and `.pub` (its own key).

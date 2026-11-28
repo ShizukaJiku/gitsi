@@ -10,6 +10,7 @@ consumes. A single Go binary. Before changing something, read what applies:
 | `docs/ARCHITECTURE.md` | packages, layers, patterns, CLI map |
 | `docs/ROADMAP.md` | planned improvements |
 | `docs/WATCH.md` | design of `gitsi watch` |
+| `docs/MIRROR.md` | design of `gitsi mirror` |
 | `docs/TRAY.md` | the tray menu of `gitsi watch -tray` |
 
 ## Principles the code cannot break

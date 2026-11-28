@@ -105,6 +105,14 @@ who is listening. Opt-in reactions (`watch.auto_update`, `watch.auto_take`, `wat
 the repo where watch runs) run gitsi itself without interactive input; a new version is attempted only once and, once installed,
 watch restarts with it. Full design in `WATCH.md`.
 
+**D28 - Origin mirrors (`mirror`).** The edge keeps origin branches the hub must follow mirrored on the bridge, in hidden refs
+(`refs/gitsi/mirror/<branch>`) apart from the shared branches. Only the edge decides what is followed (`mirror add`, `-list` after
+showing it); origin URLs are https, ssh or `user@host:path`, and git toward the origin may only use https and ssh and never asks
+anything. No policy: moving content to the bridge through git needs none, and `watch.mirror` (off by default) runs the cycle
+inside watch every 10 minutes. A cycle pushes only the branches whose tip moved, with an explicit lease, and a repo that fails
+does not stop the others; it ends by sending the hub its whole state (`KindMirror`), which `mirror ls` shows on the hub, STALE
+after 30 minutes without a cycle. Hub working clones see the mirrors as `mirror/<branch>`. Full design in `MIRROR.md`.
+
 **D26 - Shared clipboard.** With the `clip` policy on both machines, `watch` shares the clipboard: a hotkey
 (`clip.hotkey`, Ctrl+Shift+Alt+C) sends what is copied, or every copy with `clip.auto`, and what arrives is written to the clipboard.
 It travels inside the watch session (frames both ways) to a single slot on the hub that each copy replaces and that expires after

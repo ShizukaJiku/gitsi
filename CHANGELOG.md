@@ -3,6 +3,21 @@
 All notable changes to gitsi are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-11-27
+
+### Added
+- `gitsi mirror` (`docs/MIRROR.md`): the edge keeps origin branches the hub must follow mirrored on the bridge, in hidden refs
+  (`refs/gitsi/mirror/<branch>`) that never collide with the shared branches. `mirror add` (or `add -list`, which shows the list
+  and asks) creates the bridge repo when needed and seeds the edge's copy from the bridge, so only what the bridge lacks comes from
+  the origin; `mirror sync` pushes only the branches whose tip moved, with an explicit lease; `mirror ls` and `mirror rm`. Toward
+  the origin git never asks anything and may only use https and ssh; a failing repo does not stop the others.
+- `watch.mirror on` (also in the tray's Settings): `watch` runs a mirror cycle when it starts and every 10 minutes.
+- On the hub, `gitsi mirror ls` (and `--json`) shows what each edge mirrors, its last cycle and errors, STALE after 30 minutes
+  without a cycle; working clones see the mirrors as `mirror/<branch>` after a `git fetch` (`repo get` and `repo sync` add the
+  refspec).
+- Retention: an edge's mirror report on the hub goes after 14 days without a cycle; `gitsi clean` on the edge removes the local
+  copy of a mirror no longer followed.
+
 ## [1.4.1] - 2026-11-25
 
 ### Fixed

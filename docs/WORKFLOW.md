@@ -44,6 +44,21 @@ git commit ... ; gitsi sync                # EDGE: sends the commits; after an a
 gitsi sync                                 # HUB: takes the edge's version
 ```
 
+## Following origin branches the hub needs
+
+When the hub has to stay up to date with origin branches nobody changes from the edge (the team's `development`, `main`):
+
+```powershell
+# EDGE - once
+gitsi mirror add app https://github.com/acme/app.git -branch development
+gitsi config set watch.mirror on           # with gitsi watch open: a cycle every 10 minutes
+
+# HUB - in the working clone
+git fetch
+git log HEAD..mirror/development           # what the origin has that this branch does not
+gitsi mirror ls                            # when the edge last checked each mirror, and its errors
+```
+
 ## What runs where
 
 | Task | Machine |

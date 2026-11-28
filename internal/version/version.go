@@ -8,7 +8,7 @@ package version
 import "strings"
 
 // Version is gitsi's semantic version.
-var Version = "1.4.1"
+var Version = "1.5.0"
 
 // Commit is the commit it was built from (empty when not set).
 var Commit = ""
