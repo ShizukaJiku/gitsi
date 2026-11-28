@@ -37,10 +37,11 @@ const (
 	KindPing                     // hub heartbeat during watch
 	KindClip                     // a shared clipboard item's header, both ways inside a watch session (docs/CLIP.md)
 	KindClipData                 // a block of that item's content, right after its header
+	KindMirror                   // an edge's mirror report after a cycle (internal/mirror); the hub answers KindOK
 )
 
 // Known reports whether the kind exists in this protocol version.
-func (k Kind) Known() bool { return k >= KindHello && k <= KindClipData }
+func (k Kind) Known() bool { return k >= KindHello && k <= KindMirror }
 
 // Frame is a complete frame.
 type Frame struct {

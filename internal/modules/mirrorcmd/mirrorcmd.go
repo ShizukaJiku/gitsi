@@ -34,7 +34,7 @@ func (mod) Commands() []module.Command {
 	return []module.Command{
 		{Group: "mirror", Name: "add", Summary: "Follow origin branches into a bridge repo (-list: several at once)", Roles: module.Edge, NeedsHub: true, Run: add, Flags: []string{"-branch", "-list", "-yes"}},
 		{Group: "mirror", Name: "sync", Summary: "Bring the followed origin branches to the bridge now", Roles: module.Edge, NeedsHub: true, Run: syncCmd, Complete: completeNames},
-		{Group: "mirror", Name: "ls", Summary: "What this edge follows: last check and last error", Roles: module.Edge, Run: ls},
+		{Group: "mirror", Name: "ls", Summary: "What is mirrored: last check and error (on the hub, of each edge)", Roles: module.Both, Run: ls},
 		{Group: "mirror", Name: "rm", Summary: "Stop following a repo, or one of its branches", Roles: module.Edge, NeedsHub: true, Run: rm, Flags: []string{"-branch"}, Complete: completeNames},
 	}
 }

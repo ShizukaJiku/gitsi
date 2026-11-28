@@ -70,6 +70,7 @@ internal/
   watch              hub notices to the edge: the hub's Handler (watches binary, outbox, jobs, repos), the edge's Client (reconnects);
                      the session also carries the shared clipboard both ways
   clip               the shared clipboard: the item, its frames, the hub's slot and the Sharer (read, filter, send, receive, write)
+  mirror             the hub's record of each edge's origin mirrors: the report (KindMirror), its validation, the store, the Handler
   layout             the hub's layout (Home, Repos, Binary, Mailbox, Jobs): computed by the hub, sent in the greeting
   hubview            how the edge discovers it (greeting + 10 min cache per user@host:port)
   bridge             how the edge reaches the hub's bare repos: their git URL and the script that creates one
@@ -90,7 +91,7 @@ internal/
     statuscmd        status                              (gathers the read-only probes app hands it: drop.Pending,
                                                          remote.Jobs, watchcmd.Listening, repo.Here)
     completion       setup completion [-print | -off]    (fixed block in the PowerShell profile; app gives the candidates)
-    servecmd         serve --stdio (hidden; gets from app the mailbox and watch handlers, which share the session through hub.Mux)
+    servecmd         serve --stdio (hidden; gets from app the mailbox, watch and mirror handlers, which share the session through hub.Mux)
   e2e                tests with the real binary as a process and against a disposable real sshd (opt-in)
 ```
 

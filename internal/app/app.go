@@ -37,7 +37,7 @@ import (
 // Modules returns the registered modules. To add a feature, add it here.
 func Modules() []module.Module {
 	return []module.Module{
-		provision.New(), repo.New(), mirrorcmd.New(), services.New(), policycmd.New(), servecmd.New(drop.HubHandler, watchcmd.HubHandler), drop.New(), remote.New(drop.TakeByID), doctor.New(), update.New(), watchcmd.New(), cleancmd.New(), dockercmd.New(), completion.New(),
+		provision.New(), repo.New(), mirrorcmd.New(), services.New(), policycmd.New(), servecmd.New(drop.HubHandler, watchcmd.HubHandler, mirrorcmd.HubHandler), drop.New(), remote.New(drop.TakeByID), doctor.New(), update.New(), watchcmd.New(), cleancmd.New(), dockercmd.New(), completion.New(),
 		statuscmd.New(
 			statuscmd.Probe{Label: "mailbox", Roles: module.Both, NeedsHub: true, Run: drop.Pending},
 			statuscmd.Probe{Label: "outbox", Roles: module.Hub, Run: drop.Waiting},

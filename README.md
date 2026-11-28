@@ -130,6 +130,7 @@ gitsi mirror add -list repos.txt     # EDGE: several, one "<name> <origin-url> <
 gitsi mirror sync                    # EDGE: bring what changed now (only the branches whose tip moved travel)
 gitsi mirror ls                      # EDGE: what it follows, the last check and the last error of each
 gitsi mirror rm app [-branch dev]    # EDGE: stop following it (the bridge repo stays)
+gitsi mirror ls                      # HUB: what each edge mirrors, its last cycle and errors; STALE when it stopped checking
 ```
 The first `add` seeds the edge's copy from the bridge, so only what the bridge lacks comes from the origin. Toward the origin git
 never asks anything: an expired credential is an error of that repo, and the others go on. Origin URLs are `https://`, `ssh://` or

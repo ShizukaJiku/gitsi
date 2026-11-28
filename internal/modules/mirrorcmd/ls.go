@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ShizukaJiku/gitsi/internal/config"
 	"github.com/ShizukaJiku/gitsi/internal/module"
 )
 
@@ -30,6 +31,9 @@ func ls(_ context.Context, env *module.Env, args []string) error {
 	}
 	if len(pos) > 0 {
 		return errors.New("usage: gitsi mirror ls")
+	}
+	if env.Config.Role == config.RoleHub {
+		return hubLs(env)
 	}
 	st := loadState()
 	rows := []lsRow{}
@@ -143,6 +147,10 @@ func rm(ctx context.Context, env *module.Env, args []string) error {
 	}
 	if err := st.save(); err != nil {
 		return err
+	}
+	// The hub learns at once: otherwise the last mirror removed would show there as stale for ever.
+	if w := report(ctx, env, st, now()); w != "" {
+		fmt.Fprintln(env.Stderr, "warning: "+w)
 	}
 	if len(keep) == 0 {
 		fmt.Fprintf(env.Stdout, "Stopped mirroring %s: its local copy and the bridge's mirror refs are gone (the bridge repo stays).\n", r.Name)

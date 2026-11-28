@@ -36,6 +36,7 @@ type syncResult struct {
 	Repos     []repoResult `json:"repos"`
 	Changed   int          `json:"changed"` // repos with at least one branch updated on the bridge
 	Failed    int          `json:"failed"`
+	Warning   string       `json:"warning,omitempty"` // e.g. the hub could not record the cycle; the mirrors are not affected
 }
 
 // now is the clock (a var in tests).
@@ -88,6 +89,9 @@ func syncCmd(ctx context.Context, env *module.Env, args []string) error {
 	if err := st.save(); err != nil {
 		return err
 	}
+	if env.Transport != nil {
+		res.Warning = report(ctx, env, st, res.CheckedAt)
+	}
 	if env.JSON {
 		if err := env.PrintJSON(res); err != nil {
 			return err
@@ -119,6 +123,9 @@ func printCycle(env *module.Env, res syncResult) {
 		}
 	}
 	fmt.Fprintf(env.Stdout, "%d repo(s): %d updated, %d failed\n", len(res.Repos), res.Changed, res.Failed)
+	if res.Warning != "" {
+		fmt.Fprintln(env.Stderr, "warning: "+res.Warning)
+	}
 }
 
 // record keeps the cycle in the state and the audit log (a new tip on the bridge, never content).
