@@ -76,6 +76,7 @@ Optional, each one enabled in `watch`'s configuration and with its policy:
 | Pull from the outbox | `watch.auto_take <folder>` | `take` | `take` of that item into the folder (never overwrites, verifies SHA256) |
 | Update | `watch.auto_update on` | - | `update` with its hash verification. **Once per hash**: when it fails (e.g. security software removes the file), it does not retry that same hash on its own |
 | Fetch the repo | `watch.auto_fetch on` | - | when `watch` runs inside that repo (its bridge remote is that repo), `git fetch`: it only updates the remote branches, it does not touch the branch or the files |
+| Keep the origin mirrors up to date | `watch.mirror on` | - | when watch starts and every 10 minutes, `gitsi mirror sync`: the branches this edge follows (`gitsi mirror add`) travel to the bridge when they moved on the origin; a cycle never overlaps the previous one, and a lasting failure is said once |
 | Report to the hub | `watch.report on` | `send` | after each reaction, leaves a text in the hub's inbox (`watch-update.txt`, `watch-take.txt`) with the result |
 
 Example cycle with `auto_update` and `report` on: the hub publishes, the edge receives `update.available`, updates verifying the

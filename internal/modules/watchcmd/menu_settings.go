@@ -23,6 +23,11 @@ func (s *session) settingsMenu(ctx context.Context) desktop.MenuItem {
 			s.act(ctx, "", "change the setting", "Update automatically: "+onOff(!on), "config", "set", "watch.auto_update", onOff(!on))
 			s.refresh()
 		}})
+		mirrorOn := cfg.Watch.Mirror
+		sub = append(sub, desktop.MenuItem{Label: "Keep origin mirrors up to date", Checked: mirrorOn, Action: func() {
+			s.act(ctx, "", "change the setting", "Keep origin mirrors up to date: "+onOff(!mirrorOn), "config", "set", "watch.mirror", onOff(!mirrorOn))
+			s.refresh()
+		}})
 	} else if _, on, err := autostart.Get(); err == nil {
 		sub = append(sub, desktop.MenuItem{Label: "Start when I log on", Checked: on, Action: func() {
 			s.act(ctx, "", "change the setting", "Start when I log on: "+onOff(!on), "watch", "-autostart", onOff(!on))

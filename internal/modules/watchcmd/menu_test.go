@@ -494,6 +494,14 @@ func TestTraySettings(t *testing.T) {
 	if g.called("config set watch.auto_update on") != 1 {
 		t.Fatalf("%v", g.calls)
 	}
+	mirrors := findEntry(settings.Sub, "Keep origin mirrors up to date")
+	if mirrors == nil || mirrors.Checked {
+		t.Fatal("off by default")
+	}
+	mirrors.Action()
+	if g.called("config set watch.mirror on") != 1 {
+		t.Fatalf("%v", g.calls)
+	}
 
 	edge.close() // before the next session replaces the fakes
 	fa := &fakeAutostart{}

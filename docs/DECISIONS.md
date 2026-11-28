@@ -101,7 +101,7 @@ hub, tunnel, protocol, version) and leaves a report to paste; `check --active` a
 typed notices (new version,
 outbox item, finished job, bridge branch that changes). The edge says what it knows when it connects and the hub only notifies the
 differences (the first time, a baseline); heartbeat every 30 s and reconnection with growing waits. `gitsi edges` shows on the hub
-who is listening. Opt-in reactions (`watch.auto_update`, `watch.auto_take`, `watch.report`, `watch.auto_fetch`, the last one only in
+who is listening. Opt-in reactions (`watch.auto_update`, `watch.auto_take`, `watch.report`, `watch.auto_fetch`, `watch.mirror`; `auto_fetch` only in
 the repo where watch runs) run gitsi itself without interactive input; a new version is attempted only once and, once installed,
 watch restarts with it. Full design in `WATCH.md`.
 

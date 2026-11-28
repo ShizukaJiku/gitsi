@@ -165,7 +165,8 @@ func (s *session) runEdge(ctx context.Context) error {
 	sum, _ := install.FileSHA256(self)
 	id := identity(sum)
 	r := &reactor{cfg: env.Config.Watch, self: execSelf, fetch: fetchHere(env.Config.RemoteName, env.Config.Hub.HostAlias()),
-		out: s.out, edge: id.User + "@" + id.Edge, now: time.Now, liveUpdate: func() bool { return s.liveConfig().Watch.AutoUpdate }}
+		out: s.out, edge: id.User + "@" + id.Edge, now: time.Now, liveUpdate: func() bool { return s.liveConfig().Watch.AutoUpdate },
+		liveMirror: func() bool { return s.liveConfig().Watch.Mirror }}
 	id.Reactions = r.names()
 	var hubClip atomic.Bool // the hub of the current session shares its clipboard
 	var told atomic.Bool    // the user was already told it does not
@@ -213,6 +214,7 @@ func (s *session) runEdge(ctx context.Context) error {
 	if err := s.startUI(ctx); err != nil {
 		return err
 	}
+	go r.mirrorLoop(ctx) // its own connections: it goes on while the watch session reconnects
 	return c.Run(ctx)
 }
 

@@ -32,7 +32,8 @@ Jobs (edge)        1 running >  each job with its state: show its output, stop..
 Edges (hub)      1 listening >  who listens with watch; publish this version to the edges...
 ------------------------------------------
 Check the connection (hub: Check this hub)      the report of gitsi check in a dialog
-Settings                   >  send every copy; update automatically (edge) / start when I log on (hub); hotkey;
+Settings                   >  send every copy; update automatically, keep origin mirrors up to date (edge) /
+                               start when I log on (hub); hotkey;
                                Features > each policy with its check mark; open the configuration file
 Open the log
 ------------------------------------------
@@ -67,7 +68,7 @@ Settings and features are read from the configuration on disk each time the menu
 - Services: `svc up <name>` runs while the entry is checked, in a job object (`procx.StartTree`): closing it ends its ssh.exe
   too. A tunnel that ends on its own is notified; one opened in a terminal shows as "open elsewhere" and is left alone.
 - Jobs: `job logs <id> -tail 40` in a dialog; `job stop <id>` after a yes.
-- Settings: `config set watch.auto_update`, `watch -autostart on|off` (hub), `policy set <feature> on|off`. A change of
+- Settings: `config set watch.auto_update`, `config set watch.mirror`, `watch -autostart on|off` (hub), `policy set <feature> on|off`. A change of
   `watch.auto_update` applies to the next new version at once; turning `clip` on or off applies when watch starts again (the
   notification says so).
 - Edges: `update -publish` after a yes.

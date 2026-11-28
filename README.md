@@ -212,6 +212,7 @@ gitsi config set watch.auto_update on                           # install the ne
 gitsi config set watch.auto_take C:\Users\me\Downloads\gitsi    # pull whatever reaches the outbox
 gitsi config set watch.report on                                # leave each reaction's result in the hub's inbox
 gitsi config set watch.auto_fetch on                            # with watch open inside a repo: git fetch when it changes on the hub
+gitsi config set watch.mirror on                                # every 10 min: gitsi mirror sync (the origin branches this edge follows)
 ```
 With `gitsi watch -tray` it lives in the tray instead, and its menu covers daily use without typing commands: the mailbox
 (take, view, discard, send what you copied), the repos' working folders (state, sync, publish, get one from the hub), the hub's

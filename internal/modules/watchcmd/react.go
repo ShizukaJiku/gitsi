@@ -2,6 +2,7 @@ package watchcmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -68,6 +69,9 @@ type reactor struct {
 	now   func() time.Time
 	// liveUpdate reads watch.auto_update as it is now (the tray's Settings change it while watch runs); nil: cfg's value.
 	liveUpdate func() bool
+	// liveMirror does the same for watch.mirror.
+	liveMirror func() bool
+	lastMirror string // the last mirror line printed, so a failure that lasts is said once
 }
 
 // names are the active reactions (announced to the hub for 'gitsi edges').
@@ -85,7 +89,78 @@ func (r *reactor) names() []string {
 	if r.cfg.AutoFetch {
 		n = append(n, "fetch")
 	}
+	if r.cfg.Mirror {
+		n = append(n, "mirror")
+	}
 	return n
+}
+
+// mirrorEvery is how often watch brings the origin mirrors up to date (a var in tests).
+var mirrorEvery = 10 * time.Minute
+
+// mirrorLoop keeps the origin mirrors (gitsi mirror) up to date while watch runs: one cycle when it starts and one every
+// mirrorEvery. Cycles run one after the other in this goroutine, so two never overlap: a slow one just skips the ticks it
+// covered. watch.mirror is read as it is now on each tick (the tray's Settings change it while watch runs). The cycle is
+// gitsi itself (mirror sync), like the other reactions: the same lock, audit and messages, and watch depends on no other module.
+func (r *reactor) mirrorLoop(ctx context.Context) {
+	tick := time.NewTicker(mirrorEvery)
+	defer tick.Stop()
+	for {
+		if r.mirrorOn() {
+			r.mirrorCycle(ctx)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func (r *reactor) mirrorOn() bool {
+	if r.liveMirror != nil {
+		return r.liveMirror()
+	}
+	return r.cfg.Mirror
+}
+
+// mirrorCycle runs one cycle and says what happened when something did: a repo updated or failing, or a warning. A quiet cycle
+// prints nothing, and the same line is not repeated cycle after cycle (an origin that stays down).
+func (r *reactor) mirrorCycle(ctx context.Context) {
+	out, err := r.self(ctx, "--json", "mirror", "sync")
+	var res struct {
+		Repos []struct {
+			Name  string `json:"name"`
+			Error string `json:"error"`
+		} `json:"repos"`
+		Changed int    `json:"changed"`
+		Failed  int    `json:"failed"`
+		Warning string `json:"warning"`
+	}
+	// the output is stdout and stderr together: the JSON comes first and the command's final error, if any, after it
+	var line string
+	if json.NewDecoder(strings.NewReader(out)).Decode(&res) != nil {
+		line = "mirror: " + lastLine(out, err)
+	} else if res.Changed > 0 || res.Failed > 0 || res.Warning != "" {
+		line = fmt.Sprintf("mirror: %d repo(s), %d updated, %d failed", len(res.Repos), res.Changed, res.Failed)
+		for _, repo := range res.Repos {
+			if repo.Error != "" {
+				line += fmt.Sprintf(" (%s: %s)", watch.Printable(repo.Name, 40), watch.Printable(repo.Error, 160))
+				break
+			}
+		}
+		if res.Warning != "" {
+			line += "; " + watch.Printable(res.Warning, 200)
+		}
+	}
+	if line == "" {
+		r.lastMirror = ""
+		return
+	}
+	if line != r.lastMirror || res.Changed > 0 {
+		r.printf("%s", line)
+	}
+	r.lastMirror = line
 }
 
 func (r *reactor) printf(format string, a ...any) {
